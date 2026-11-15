@@ -215,6 +215,7 @@ main.anim tbody tr{animation:fadeIn .4s both}
   <nav id="nav">
     <a href="#visits" data-v="visits">My Doctors</a>
     <a href="#followups" data-v="followups">Follow-ups<span class="n" id="fuN" hidden></span></a>
+    <a href="#help" data-v="help">Help</a>
     <a href="#briefings" data-v="briefings">WhatsApp Briefings<span class="n" id="brN" hidden></span></a>
     <a href="#reports" data-v="reports">Reports &amp; Export</a>
     <a href="#activity" data-v="activity">Activity Log</a>
@@ -355,7 +356,7 @@ $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.s
 
 /* ---------- routing ---------- */
 const ADMIN_VIEWS=["briefings","reports","activity","setup"];
-function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","briefings","reports","activity","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
+function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","help","briefings","reports","activity","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- render ---------- */
@@ -382,7 +383,7 @@ function render(){
     if(!loggedIn()){
       $("#nav").hidden=true;
       const k="login:"+loginStage; if(main.dataset.screen===k)return;
-      main.dataset.screen=k; main.innerHTML=h+vLogin(); bindLogin(); afterRender(); return;
+      main.dataset.screen=k; main.innerHTML=h+vLogin()+`<p style="text-align:center;margin-top:-10px"><a href="#" id="lgHelp" style="color:var(--accent);font-weight:600;text-decoration:none">📖 How to use this app</a></p>`; bindLogin(); {const hl=$("#lgHelp");if(hl)hl.onclick=e=>{e.preventDefault();openHelpSheet()}} afterRender(); return;
     }
   }
   $("#nav").hidden=false; main.dataset.screen="";
@@ -392,6 +393,7 @@ function render(){
   else if(view==="briefings")h+=vBriefings(bd);
   else if(view==="reports")h+=vReports();
   else if(view==="activity")h+=vActivity();
+  else if(view==="help")h+=vHelp();
   else h+=vSetup();
   $("#main").innerHTML=h;
   bindView(); afterRender();
@@ -700,6 +702,7 @@ function vReports(){
   <div class="row" style="margin-bottom:12px">
     <button class="btn navy" id="xX">⬇ Excel (.xlsx)</button>
     <button class="btn" id="xC">⬇ CSV</button>
+    <button class="btn navy" id="xP">⬇ PDF report</button>
     <button class="btn" id="xM">Copy as XML (Excel 2003)</button>
     <span class="small muted">Exports the ${r.length} visits matching the filters.</span>
   </div>`;
@@ -776,6 +779,7 @@ function bindView(){
   on("#xX","click",()=>exportXlsx(reportRows(),"HAN_Visits_"+today()+".xlsx"));
   on("#xC","click",exportCsv);
   on("#xM","click",copyXml);
+  on("#xP","click",()=>meetupPdf(reportRows()));
   on("#imp","change",importFile);
   on("#sendAll","click",()=>openSendAll(briefCache,filt.brDate));
   bindTransfers(); if(view==="activity")bindActivity();
@@ -919,6 +923,47 @@ function exportXlsx(list,fname,fuRows){
   const out=XLSX.write(wb,{bookType:"xlsx",type:"array"});
   save(fname,new Blob([out]));
 }
+/* ---------- meetup report PDF ---------- */
+function meetupPdf(rows){
+  rows=rows.slice().sort((a,b)=>(a.execName||"").localeCompare(b.execName||"")||(a.ts||0)-(b.ts||0));
+  if(!rows.length)return toast("No meetups to export for these filters");
+  if(!window.jspdf||!window.jspdf.jsPDF)return toast("PDF library didn't load — check internet and reload");
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:"a4",orientation:"landscape"}); const W=842;
+  const T=pdfText, cnt=(r,s)=>r.filter(v=>v.status===s).length;
+  const range=(filt.rpFrom||filt.rpTo)?`${filt.rpFrom?fmtDs(filt.rpFrom):"start"} to ${filt.rpTo?fmtDs(filt.rpTo):"today"}`:"All dates";
+  const who=filt.rpExec==="all"?"All executives":(execById(filt.rpExec)?.name||filt.rpExec);
+  const st=filt.rpStatus==="all"?"All status":STATUS[filt.rpStatus];
+  const head=(title,sub)=>{doc.setFillColor(14,42,71);doc.rect(0,0,W,64,"F");doc.setTextColor(255);doc.setFont("helvetica","bold");doc.setFontSize(16);doc.text(T(title),36,30);
+    doc.setFont("helvetica","normal");doc.setFontSize(10);doc.setTextColor(143,214,183);doc.text(T(sub),36,48);doc.setTextColor(20,33,46)};
+  // page 1: summary
+  head("Dr. Han Healthcare - Meetup Report",`${who}  |  ${st}  |  ${range}`);
+  doc.setFontSize(11);doc.setFont("helvetica","bold");
+  doc.text(`Total meetups: ${rows.length}     Positive: ${cnt(rows,"positive")}     Follow-up: ${cnt(rows,"followup")}     Negative: ${cnt(rows,"negative")}     Doctors met: ${new Set(rows.map(v=>v.doctorId)).size}`,36,90);
+  doc.setFont("helvetica","normal");
+  const ex=[...new Set(rows.map(v=>v.execId))];
+  doc.autoTable({startY:104,margin:{left:36,right:36},head:[["Executive","ID","Meetups","Doctors met","Positive","Follow-up","Negative","First","Last"]],
+    body:ex.map(id=>{const r=rows.filter(v=>v.execId===id);return [T(r[0].execName),id,r.length,new Set(r.map(v=>v.doctorId)).size,cnt(r,"positive"),cnt(r,"followup"),cnt(r,"negative"),fmtDs(r[0].date),fmtDs(r[r.length-1].date)]}),
+    styles:{fontSize:9.5,cellPadding:5},headStyles:{fillColor:[31,157,111],textColor:255},alternateRowStyles:{fillColor:[246,249,251]}});
+  // one section per executive
+  for(const id of ex){
+    const r=rows.filter(v=>v.execId===id);
+    doc.addPage(); head(`${r[0].execName} (${id})`,`${r.length} meetups  |  Positive ${cnt(r,"positive")}  |  Follow-up ${cnt(r,"followup")}  |  Negative ${cnt(r,"negative")}  |  ${range}`);
+    doc.autoTable({startY:80,margin:{left:36,right:36},
+      head:[["Date / Time","Doctor / Hospital","Purpose","Status","What the doctor said","Reason / Next step"]],
+      body:r.map(v=>[`${fmtDs(v.date)}\n${t12(v.time)}${v.visitNo?"\nMeetup #"+v.visitNo:""}`,
+        T(`${v.doctor}${v.speciality?" ("+v.speciality+")":""}\n${v.hospital}${v.area?", "+v.area:""}\nRole: ${ROLES[v.role]||"-"}`),
+        T((v.purposes||[]).join(", ")),STATUS[v.status]||v.status,T(v.conversation||"-"),
+        T([v.reason,nextDate(v)?(v.status==="positive"?"Expected confirmation: ":"Next follow-up: ")+fmtD(nextDate(v))+(v.nextTime?" "+t12(v.nextTime):""):""].filter(Boolean).join("\n")||"-")]),
+      styles:{fontSize:8.5,cellPadding:4,valign:"top",overflow:"linebreak"},headStyles:{fillColor:[31,157,111],textColor:255},alternateRowStyles:{fillColor:[246,249,251]},
+      columnStyles:{0:{cellWidth:70},1:{cellWidth:150},2:{cellWidth:105},3:{cellWidth:58,fontStyle:"bold"},4:{cellWidth:"auto"},5:{cellWidth:150}},
+      didParseCell:d=>{if(d.section==="body"&&d.column.index===3){const s=d.cell.raw;d.cell.styles.textColor=s==="Positive"?[19,112,78]:s==="Negative"?[161,45,45]:[138,90,0]}}});
+  }
+  const n=doc.getNumberOfPages();
+  for(let p=1;p<=n;p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(120);doc.text(`Generated ${T(fmtD(today()))} ${hm(Date.now())}  |  Page ${p} of ${n}`,36,580)}
+  save(`HAN_Meetup_Report_${filt.rpExec==="all"?"All":filt.rpExec}_${filt.rpFrom||"start"}_to_${filt.rpTo||today()}.pdf`,doc.output("blob"));
+  logAct("admin",`Downloaded meetup report PDF (${rows.length} meetups, ${who}, ${range})`);
+}
+
 function exportCsv(){
   const rows=exportRows(reportRows()); if(!rows.length)return toast("Nothing to export");
   const h=Object.keys(rows[0]); const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
@@ -1253,7 +1298,7 @@ function bindActivity(){
     ws["!cols"]=[{wch:12},{wch:10},{wch:10},{wch:22},{wch:12},{wch:80}];XLSX.utils.book_append_sheet(wb,ws,"Activity");
     save(`HAN_Activity_${filt.acFrom}_to_${filt.acTo}.xlsx`,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]))};
 }
-function pdfText(s){return String(s??"").replace(/[–—]/g,"-").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/•/g,"-").replace(/[^\x20-\x7E -ÿ]/g,"").trim()}
+function pdfText(s){return String(s??"").replace(/[–—]/g,"-").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/•/g,"-").replace(/[^\n\x20-\x7E -ÿ]/g,"").trim()}
 function actPdf(rows){
   if(!rows.length)return toast("Nothing to export");
   if(!window.jspdf||!window.jspdf.jsPDF)return toast("PDF library didn't load — check internet and reload");
@@ -1507,6 +1552,43 @@ async function resetData(full,progress){
     if(todo.length<50)break;
   }
   progress("Done"); return total;
+}
+
+/* ---------- Help (executive guide) ---------- */
+function helpBody(){
+  const s=(t,b)=>`<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 8px;font-size:17px;color:var(--navy)">${t}</h3>${b}</div>`;
+  return `<div class="help" style="line-height:1.6">`+
+  s("1. Login",`<ul style="margin:0;padding-left:20px">
+    <li><b>User ID:</b> your own ID (e.g. <b>HAN001</b>). Your name appears while you type it.</li>
+    <li><b>Password:</b> the first time, use the default password from your admin. The app then asks you to set your own password (at least 6 characters).</li>
+    <li>Tick <b>Keep me logged in on this device</b> so you don't have to log in every time.</li></ul>`)+
+  s("2. After every doctor meeting",`<p style="margin:0 0 6px">Tabs: <b>My Doctors</b> and <b>My Meetings</b>.</p><ol style="margin:0;padding-left:20px">
+    <li><b>My Doctors</b> → tap the doctor.</li>
+    <li>Tap <b>+ Add meetup update</b> (date and time fill in automatically).</li>
+    <li>Choose <b>Purchase role</b> and <b>Purpose</b>, and type what the doctor said.</li>
+    <li>Choose the final status:<ul style="padding-left:18px"><li><b>Positive:</b> expected confirmation date.</li><li><b>Follow-up:</b> reason + next date.</li><li><b>Negative:</b> reason.</li></ul></li>
+    <li>Tap <b>Save meetup</b>.</li></ol>
+    <p style="margin:8px 0 0">To plan a visit: open the doctor → <b>Schedule meeting</b> → pick date and time.<br><b>My Meetings</b> shows today's, upcoming and overdue meetings (overdue in red).</p>`)+
+  s("3. Passwords",`<p style="margin:0 0 6px"><b>Change your password:</b> tap <b>Change password</b> at the top → current password → new password twice.</p>
+    <p style="margin:0 0 4px"><b>Forgot your password:</b></p><ol style="margin:0;padding-left:20px">
+    <li>Ask your admin to reset it.</li><li>The admin gives you a new default password.</li><li>Log in with your User ID + that default password.</li><li>The app asks you to set your own new password.</li></ol>
+    <p style="margin:8px 0 0">Your doctors and meetups are kept. <b>Logout:</b> tap <b>Logout</b> at the top, especially on a shared phone.</p>`)+
+  s("4. Handing a doctor over (handshake)",`<p style="margin:0 0 6px">A doctor moves only when the other executive accepts. All past meetups and scheduled meetings move with the doctor.</p>
+    <p style="margin:0 0 4px"><b>To send a doctor:</b></p><ol style="margin:0;padding-left:20px">
+    <li><b>My Doctors</b> → tap the doctor → <b>Hand over to another executive</b>.</li>
+    <li>Choose the executive, type the reason → <b>Send request</b>.</li>
+    <li>You see <b>"Waiting for … to accept"</b>. Tap <b>Cancel</b> if you change your mind.</li></ol>
+    <p style="margin:8px 0 4px"><b>To receive a doctor:</b></p><ol style="margin:0;padding-left:20px">
+    <li>A <b>Doctor handover requests</b> box appears at the top of <b>My Doctors</b>.</li>
+    <li><b>Accept:</b> the doctor joins your list with all past meetups.</li>
+    <li><b>Decline:</b> the doctor stays with the other executive, who sees that you declined.</li></ol>`)+
+  `</div>`;
+}
+function vHelp(){return `<h2>How to use this app</h2>`+helpBody()}
+function openHelpSheet(){
+  $("#sheet").innerHTML=`<div class="sheet-h"><div style="font-weight:700;font-size:16px">📖 How to use this app</div><button class="x" id="hpX">×</button></div><div class="sheet-b">${helpBody()}</div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#hpX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
 }
 
 /* ---------- confirm box ---------- */
