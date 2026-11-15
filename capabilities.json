@@ -1,0 +1,58 @@
+{
+  "db": {
+    "rules": [
+      {
+        "path": "config/master",
+        "write": "owner"
+      },
+      {
+        "path": "auth",
+        "read": "interact",
+        "write": "owner"
+      },
+      {
+        "path": "claims",
+        "read": "interact",
+        "write": "interact"
+      },
+      {
+        "path": "plans",
+        "read": "interact",
+        "write": "interact"
+      },
+      {
+        "path": "assign",
+        "read": "interact",
+        "write": "interact"
+      },
+      {
+        "path": "transfers",
+        "read": "interact",
+        "write": "interact"
+      },
+      {
+        "path": "activity",
+        "read": "owner",
+        "write": "owner"
+      },
+      {
+        "path": "activity/{self}",
+        "read": "interact",
+        "write": "interact"
+      },
+      {
+        "path": "visits",
+        "read": "owner",
+        "write": "owner"
+      },
+      {
+        "path": "visits/{self}",
+        "read": "interact",
+        "write": "interact"
+      }
+    ]
+  },
+  "user": {},
+  "downloads": true,
+  "sample": {}
+}
