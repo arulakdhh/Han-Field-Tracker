@@ -9,6 +9,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <style>
 :root{
   --navy:#0e2a47; --navy2:#16395f; --green:#1f9d6f; --green-soft:#e6f5ee; --red:#d64545; --red-soft:#fbeaea;
@@ -335,7 +339,8 @@ function syncRole(){
 function watchVisits(id,clear,onErr){
   return db.collection("visits/"+id+"/v").orderBy("ts","desc").limit(1000).onSnapshot(s=>{
     visitsBy[id]=s.docs.map(d=>({id:d.id,_uid:id,...d.data()}));
-    visits=[].concat(...Object.values(visitsBy));
+    const all=[].concat(...Object.values(visitsBy)), ids=new Set(all.map(v=>v.id));
+    visits=all.filter(v=>!v.copyOf||!ids.has(v.copyOf));
     visitsLoaded=true; if(!s.metadata.fromCache)clear(); render();
   },onErr);
 }
@@ -373,7 +378,7 @@ function render(){
   const main=$("#main");
   if(!booted||!masterLoaded||!ownLoaded){main.dataset.screen="";$("#nav").hidden=true;main.innerHTML=h+'<div class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>';return}
   if(!canAdmin){
-    if(!db||!uid){$("#nav").hidden=true;main.dataset.screen="";main.innerHTML=h+'<div class="empty">Please sign in to claude.ai, then open this link again.</div>';return}
+    if(!db){$("#nav").hidden=true;main.dataset.screen="";main.innerHTML=h+'<div class="empty">The app is not connected to Firebase yet.</div>';return}
     if(!loggedIn()){
       $("#nav").hidden=true;
       const k="login:"+loginStage; if(main.dataset.screen===k)return;
@@ -779,7 +784,7 @@ function bindView(){
   on("#aGo","click",addOne);
   on("#xGo","click",addExec);
   document.querySelectorAll("[data-rst]").forEach(b=>b.onclick=()=>{const e=execById(b.dataset.rst);confirmBox(`Reset ${e.name}'s password? They will log in again with the default password and set a new one.`,()=>resetPw(e.id),"Reset password")});
-  document.querySelectorAll("[data-dpw]").forEach(b=>b.onclick=async()=>{const i=$("#dpw-"+b.dataset.dpw);const v=i.value.trim();if(v.length<4)return toast("Default password: at least 4 characters");await setDefaultPw(b.dataset.dpw,v);i.value="";toast("Default password saved")});
+  document.querySelectorAll("[data-dpw]").forEach(b=>b.onclick=async()=>{const i=$("#dpw-"+b.dataset.dpw);const v=i.value.trim();if(v.length<6)return toast("Default password: at least 6 characters");await setDefaultPw(b.dataset.dpw,v,true);i.value="";toast("Default password saved")});
   document.querySelectorAll("[data-ph]").forEach(i=>i.onchange=()=>{const e=execById(i.dataset.ph);if(e){e.phone=i.value.trim();saveMaster("WhatsApp number saved")}});
   document.querySelectorAll("[data-delx]").forEach(b=>b.onclick=()=>confirmBox("Remove this executive and their doctor list? Logged visits stay in reports.",()=>{master.executives=master.executives.filter(e=>e.id!==b.dataset.delx);saveMaster("Executive removed")}));
   document.querySelectorAll("[data-deld]").forEach(b=>b.onclick=()=>{const [x,d]=b.dataset.deld.split("|");const e=execById(x);if(e){e.doctors=e.doctors.filter(z=>z.id!==d);saveMaster("Doctor removed")}});
@@ -1293,6 +1298,7 @@ async function acceptTransfer(id){
   const t=transfers.find(x=>x.id===id); if(!t||t.status!=="pending")return;
   try{
     await db.doc("assign/"+t.doctorId).set({execId:t.toExec,from:t.fromExec,at:Date.now(),transferId:t.id});
+    if(uid&&!canAdmin)for(const h of (t.history||[])){try{await db.doc("visits/"+uid+"/v/c_"+h.copyOf).set({...h,copiedAt:Date.now()})}catch(e){}}
     await db.doc("transfers/"+t.id).update({status:"accepted",decidedAt:Date.now(),decidedBy:actor().id});
     logAct("transfer",`Accepted ${t.doctor} (${t.hospital}) from ${t.fromName}${canAdmin?" → "+t.toName:""}`);
     toast("Doctor accepted ✓");
@@ -1333,7 +1339,8 @@ function bindTransferForm(e,d,reopen){
     const to=execById($("#tTo").value), why=$("#tWhy").value.trim();
     if(!to)return $("#tErr").textContent="Choose the executive.";
     g.disabled=true;
-    const rec={doctorId:d.id,doctor:d.doctor,hospital:d.hospital,fromExec:e.id,fromName:e.name,toExec:to.id,toName:to.name,reason:why,at:Date.now(),by:uid||""};
+    const rec={doctorId:d.id,doctor:d.doctor,hospital:d.hospital,fromExec:e.id,fromName:e.name,toExec:to.id,toName:to.name,reason:why,at:Date.now(),by:uid||"",
+      history:(byDoctor()[d.id]||[]).map(v=>{const {id,_uid,...rest}=v;return {...rest,copyOf:v.copyOf||id}})};
     try{
       if(canAdmin){
         await db.doc("assign/"+d.id).set({execId:to.id,from:e.id,at:Date.now(),by:"ADMIN"});
@@ -1445,7 +1452,7 @@ function openReset(){
   $("#sheet").innerHTML=`<div class="sheet-h" style="background:#7f1d1d"><div><div style="font-weight:700;font-size:16px">🗑️ Reset data</div><div class="small" style="color:#fecaca">This cannot be undone</div></div><button class="x" id="rsX">×</button></div>
   <div class="sheet-b">
     <label class="card" style="display:flex;gap:10px;cursor:pointer;margin-bottom:10px;padding:12px"><input type="radio" name="rsMode" value="activity" checked style="margin-top:3px">
-      <div><b>Erase test activity only</b><div class="small muted">Deletes all meetups, scheduled meetings, handovers, activity log, and executives' own passwords (they log in again with the default password). <b>Keeps</b> your executives, doctors and default passwords.</div></div></label>
+      <div><b>Erase test activity only</b><div class="small muted">Deletes all meetups, scheduled meetings, handovers, and activity log. <b>Keeps</b> your executives, doctors and default passwords.</div></div></label>
     <label class="card" style="display:flex;gap:10px;cursor:pointer;padding:12px"><input type="radio" name="rsMode" value="full" style="margin-top:3px">
       <div><b>Erase everything</b><div class="small muted">All of the above <b>plus</b> the executive & doctor list, default passwords and team look. The app becomes empty, ready for your real Excel upload.</div></div></label>
     <span class="lbl">Your admin password</span><input type="password" id="rsPw" autocomplete="current-password">
@@ -1461,7 +1468,7 @@ function openReset(){
     const er=$("#rsErr"); er.textContent="";
     const full=document.querySelector('input[name=rsMode]:checked').value==="full";
     if($("#rsTxt").value.trim().toUpperCase()!=="RESET")return er.textContent="Type RESET to confirm.";
-    if(!adminDoc||await hashPw($("#rsPw").value,adminDoc.pwSalt)!==adminDoc.pwHash)return er.textContent="Admin password is wrong.";
+    if(!(await verifyAdminPw($("#rsPw").value)))return er.textContent="Admin password is wrong.";
     const btn=$("#rsGo"); btn.disabled=true; $("#rsC").disabled=true; $("#rsX").disabled=true;
     try{
       const n=await resetData(full,t=>{$("#rsProg").textContent=t});
@@ -1472,6 +1479,7 @@ function openReset(){
     }catch(x){btn.disabled=false;$("#rsC").disabled=false;$("#rsX").disabled=false;er.textContent="Reset stopped ("+(x.code||x.message)+"). Run it again to finish."}
   };
 }
+async function verifyAdminPw(p){return !!adminDoc&&await hashPw(p,adminDoc.pwSalt)===adminDoc.pwHash}
 async function resetData(full,progress){
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   const list=async c=>{try{return (await db.collection(c).limit(1000).get()).docs.map(d=>c+"/"+d.id)}catch(e){return []}};
@@ -1486,7 +1494,7 @@ async function resetData(full,progress){
     for(const id of aIds)paths.push(...await list("activity/"+id+"/d"));
     paths.push(...aParents);
     for(const c of ["plans","assign","transfers","claims"])paths.push(...await list(c));
-    if(full){paths.push(...await list("auth"));if(master.executives.length||master.theme)paths.push("config/master")}
+    if(full){paths.push(...await list("auth"));if(pass===0)paths.push("public/names");if(master.executives.length||master.theme)paths.push("config/master")}
     const todo=paths.filter(p=>!(p==="config/master"&&pass>0));
     if(!todo.length)break;
     for(let i=0;i<todo.length;i++){
@@ -1509,7 +1517,7 @@ function confirmBox(text,yes,label){
   $("#cy").onclick=()=>{$("#ov").classList.remove("on");yes()};
 }
 
-route(); boot();
 </script>
+<script src="firebase-runtime.js"></script>
 </body>
 </html>

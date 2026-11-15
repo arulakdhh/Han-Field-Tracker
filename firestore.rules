@@ -1,0 +1,48 @@
+rules_version = '2';
+// ================================================================
+//  Dr. Han Field Sales – Firestore security rules
+//  Paste this whole file into: Firebase console → Firestore Database → Rules → Publish
+//  Admin login email must match firebase-config.js (HAN_ADMIN_EMAIL).
+// ================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null && request.auth.token.email != null; }
+    function isAdmin()  { return signedIn() && request.auth.token.email.lower() == 'admin@hanfield.app'; }
+    // Executive emails look like  han001.3@hanfield.app  →  ID "HAN001", login generation 3
+    function localPart() { return request.auth.token.email.lower().split('@')[0]; }
+    function myExec()   { return localPart().split('[.]')[0].upper(); }
+    function myGen()    { return int(localPart().split('[.]')[1]); }
+    function authDoc(id){ return get(/databases/$(database)/documents/auth/$(id)); }
+    // A valid executive = has an auth record whose generation matches this login (old logins stop working after a reset)
+    function isExec(id) { return signedIn() && !isAdmin() && myExec() == id
+                                 && exists(/databases/$(database)/documents/auth/$(id))
+                                 && authDoc(id).data.gen == myGen(); }
+    function isMember() { return isAdmin() || (signedIn() && isExec(myExec())); }
+
+    // Executive IDs + names for the login screen (no passwords)
+    match /public/{doc}     { allow read: if true;        allow write: if isAdmin(); }
+    // Team & doctor list, team look
+    match /config/{doc}     { allow read: if isMember();  allow write: if isAdmin(); }
+    // Login generation per executive; an executive may only clear their own "must change password" flag
+    match /auth/{id} {
+      allow read:  if isAdmin() || isExec(id);
+      allow write: if isAdmin();
+      allow update: if isExec(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mustChange','pwSetAt']);
+    }
+    // Meetups: each executive only their own folder; admin everything
+    match /visits/{id} {
+      allow read, write: if isAdmin() || isExec(id);
+      match /v/{v}      { allow read, write: if isAdmin() || isExec(id); }
+    }
+    // Activity log: each user writes their own day files; admin reads all
+    match /activity/{id} {
+      allow read, write: if isAdmin() || isExec(id);
+      match /d/{day}    { allow read, write: if isAdmin() || isExec(id); }
+    }
+    // Shared team data
+    match /plans/{doc}      { allow read, write: if isMember(); }
+    match /assign/{doc}     { allow read, write: if isMember(); }
+    match /transfers/{doc}  { allow read, write: if isMember(); }
+  }
+}
