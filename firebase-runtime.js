@@ -71,6 +71,7 @@ async function onAuth(u){
   if(realAdmin){
     adminDoc={pwHash:"firebase"};ownLoaded=true;
     subs.ADMIN=watchVisits("ADMIN",clear,onErr);
+    watchOrders("ADMIN"); db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
     db.collection("visits").onSnapshot(s=>{
       const ids=s.docs.map(d=>d.id);
       for(const id of ids)if(!subs[id])subs[id]=watchVisits(id,clear,onErr);
@@ -92,6 +93,7 @@ async function onAuth(u){
       $("#main").dataset.screen="";render();
     },()=>kickOut());
     subs[session]=watchVisits(session,clear,onErr);
+    watchOrders(session);
   }
   if(justLoggedIn){justLoggedIn=false;setTimeout(()=>logAct("login",(session==="ADMIN"?"Admin":(execById(session)?.name||pubNames[session]?.name||session))+" logged in"),1500)}
   route();
