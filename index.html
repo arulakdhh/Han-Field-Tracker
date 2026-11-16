@@ -274,7 +274,7 @@ function allDoctorRows(){
   const seen=new Set();
   for(const e of master.executives)for(const d of (e.doctors||[])){
     if(seen.has(d.id))continue; seen.add(d.id);
-    const o=assign[d.id]; out.push({exec:(o&&execById(o.execId))||e,doc:d,orig:e});
+    const o=assign[d.id]; out.push({exec:(o&&execById(o.execId))||e,doc:mergeInfo(d),orig:e});
   }
   return out;
 }
@@ -400,7 +400,7 @@ function render(){
   else if(view==="orders")h+=vOrders();
   else h+=vSetup();
   $("#main").innerHTML=h;
-  bindView(); afterRender();
+  bindView(); afterRender(); ensureExtraSubs();
 }
 
 /* ---------- Chennai zones ---------- */
@@ -460,7 +460,7 @@ function vVisits(bd){
   <div class="row" style="margin-bottom:12px">
     <input type="search" id="q" class="grow" placeholder="Search doctor, hospital, area…" value="${esc(filt.q)}" style="min-width:180px;flex:1">
     ${canAdmin?`<select id="dExec" style="max-width:220px"><option value="all">All executives</option>${master.executives.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select>`:""}
-    <select id="dSt" style="max-width:170px">${[["all","All status"],["new","Not met yet"],["positive","Positive"],["followup","Follow-up"],["negative","Negative"],["due","Due / overdue"]].map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select>
+    <select id="dSt" style="max-width:170px">${[["all","All status"],["new","Not met yet"],["positive","Positive"],["followup","Follow-up"],["negative","Negative"],["due","Due / overdue"],["info","⚠️ Info pending"]].map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}</select>
   </div>`;
   if(canAdmin){
     const zc=z=>info.filter(x=>x.zone===z).length;
@@ -468,7 +468,7 @@ function vVisits(bd){
   }
   const q=filt.q.toLowerCase();
   const list=info.filter(x=>(!canAdmin||filt.zone==="all"||x.zone===filt.zone)&&(!q||[x.doc.doctor,x.doc.hospital,x.doc.area,x.doc.address,x.doc.speciality,x.exec.name,ZONES[x.zone]].join(" ").toLowerCase().includes(q))&&
-    (filt.dSt==="all"||(filt.dSt==="new"&&!x.l)||(filt.dSt==="due"&&x.nm&&x.nm.date<=t)||(x.l&&x.l.status===filt.dSt)));
+    (filt.dSt==="all"||(filt.dSt==="new"&&!x.l)||(filt.dSt==="due"&&x.nm&&x.nm.date<=t)||(filt.dSt==="info"&&infoMissing(x.doc).length)||(x.l&&x.l.status===filt.dSt)));
   if(!list.length)return h+`<div class="empty">No doctors match.</div>`;
   const card=x=>{
     const role=(x.l&&x.l.role)||x.doc.role, nm=x.nm;
@@ -479,6 +479,7 @@ function vVisits(bd){
       <div class="m">
         ${canAdmin?zoneChip(x.zone):""}
         ${role?`<span class="chip role">${esc(ROLES[role]||role)}</span>`:""}
+        ${infoMissing(x.doc).length?`<span class="chip fu" title="Missing: ${infoMissing(x.doc).join(', ')}">⚠️ Info pending</span>`:""}
         ${x.l?`<span class="chip ${SCLS[x.l.status]}">${STATUS[x.l.status]}</span>`:`<span class="chip">Not met yet</span>`}
         ${x.hs.length?`<span>${x.hs.length} meetup${x.hs.length>1?"s":""} · last ${fmtDs(x.l.date)}</span>`:""}
         ${nm?`<span class="chip ${nm.date<=t?"due":""}">📅 ${fmtDs(nm.date)}${nm.time?" "+t12(nm.time):""}</span>`:""}
@@ -510,6 +511,7 @@ function openDoctor(execId,docId){
       <div>Executive<b>${esc(e.name)}</b></div>
       <div>Status<b>${l?`<span class="chip ${SCLS[l.status]}">${STATUS[l.status]}</span>`:"Not met yet"}</b></div>
     </div>
+    ${docInfoExtraHtml(d)}
     <div class="card" style="background:#f6f9fb;margin-bottom:14px">
       <div class="row"><div class="grow"><span class="lbl" style="margin:0 0 4px">Next meeting</span>
         ${nm?`<b style="color:${nm.date<t?"var(--red)":"var(--navy)"}">${esc(fmtD(nm.date))}${nm.time?" · "+esc(t12(nm.time)):""}</b> <span class="chip ${nm.type==="planned"?"role":SCLS[nm.type]}">${nm.type==="planned"?"Planned":STATUS[nm.type]}</span>${nm.note?`<div class="small muted" style="margin-top:4px">${esc(nm.note)}</div>`:""}`:`<span class="muted">Not scheduled</span>`}
@@ -537,6 +539,7 @@ function openDoctor(execId,docId){
   $("#dx").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
   const am=$("#addMu"); if(am)am.onclick=()=>{docOpen=false;openForm(execId,docId)};
   bindTransferForm(e,d,()=>openDoctor(e.id,d.id)); bindDoctorOrders(d);
+  const dio=$("#diOpen"); if(dio)dio.onclick=()=>openDocInfo(e.id,d.id);
   const zs=$("#zSel"); if(zs)zs.onchange=async()=>{await setZone(d.id,zs.value);openDoctor(e.id,d.id)};
   const sb=$("#schB"); if(sb)sb.onclick=()=>{$("#schF").hidden=!$("#schF").hidden};
   const sg=$("#sGo"); if(sg)sg.onclick=async()=>{
@@ -1226,7 +1229,7 @@ let assign={}, transfers=[], actUsers=[], actQ=Promise.resolve(), actCache={}, a
 let actData={key:"",rows:[],loading:false};
 
 /* ---------- activity logging ---------- */
-const ACT_TYPES={login:"Login",meetup:"Meetup",order:"Order",schedule:"Schedule",transfer:"Transfer",reminder:"Reminder",admin:"Admin"};
+const ACT_TYPES={login:"Login",meetup:"Meetup",order:"Order",doctor:"Doctor info",schedule:"Schedule",transfer:"Transfer",reminder:"Reminder",admin:"Admin"};
 function actor(){return session==="ADMIN"?{id:"ADMIN",name:"Admin"}:{id:session||me||"",name:execById(session||me)?.name||""}}
 function logAct(type,text){
   if(!db||!uid)return;
@@ -1546,7 +1549,7 @@ async function resetData(full,progress){
     const oParents=await list("orders"); const oIds=new Set(oParents.map(p=>p.split("/")[1])); if(uid)oIds.add(uid);
     for(const id of oIds)paths.push(...await list("orders/"+id+"/o"));
     paths.push(...oParents);
-    for(const c of ["plans","assign","transfers","claims"])paths.push(...await list(c));
+    for(const c of ["plans","assign","transfers","claims","docinfo"])paths.push(...await list(c));
     if(full){paths.push(...await list("auth"));if(pass===0)paths.push("public/names");if(master.executives.length||master.theme)paths.push("config/master")}
     const todo=paths.filter(p=>!(p==="config/master"&&pass>0));
     if(!todo.length)break;
@@ -1590,7 +1593,8 @@ function helpBody(){
     <li>A <b>Doctor handover requests</b> box appears at the top of <b>My Doctors</b>.</li>
     <li><b>Accept:</b> the doctor joins your list with all past meetups.</li>
     <li><b>Decline:</b> the doctor stays with the other executive, who sees that you declined.</li></ol>`)+
-  s("5. Recording an order",`<p style="margin:0 0 6px">When you save a meetup as <b>Positive</b>, the order form opens. You can also open a doctor → <b>New order / quotation</b>, or <b>My Orders</b> → <b>+ New order</b>.</p><ol style="margin:0;padding-left:20px">
+  s("5. Updating doctor details",`<p style="margin:0">Open a doctor → <b>✏️ Edit doctor info</b> to fill in or correct the phone, speciality, area, address, email, clinic timings, best time to visit and notes. Doctors with missing details show <b>⚠️ Info pending</b>; use the status filter <b>Info pending</b> in My Doctors to find them. To change a doctor's name or hospital, ask your admin.</p>`)+
+  s("6. Recording an order",`<p style="margin:0 0 6px">When you save a meetup as <b>Positive</b>, the order form opens. You can also open a doctor → <b>New order / quotation</b>, or <b>My Orders</b> → <b>+ New order</b>.</p><ol style="margin:0;padding-left:20px">
     <li>Enter the <b>order title</b>, <b>products</b> (quantity + unit price, total adds up) and the <b>doctor's estimated amount</b>.</li>
     <li>As the deal moves, open it in <b>My Orders</b> and tap the next stage: <b>Quotation sent → Quotation signed → Order / PO received → Delivered → Payment collected</b>.</li>
     <li>Fill what each stage asks: quotation no., signed date, PO number, delivery date, amount received.</li>
@@ -1834,6 +1838,54 @@ function doctorOrdersHtml(d){
 function bindDoctorOrders(d){
   const n=$("#ordNew"); if(n)n.onclick=()=>openOrder(null,d.id);
   document.querySelectorAll("[data-dord]").forEach(c=>c.onclick=()=>{const [u,id]=c.dataset.dord.split("|");const x=orders.find(z=>z._uid===u&&z.id===id);if(x)openOrder(x)});
+}
+
+/* ---------- doctor info edits (by executives) ---------- */
+const INFO_FIELDS=[["phone","Doctor phone","tel","e.g. 9876543210"],["speciality","Speciality","text","e.g. Cardiology"],["area","Area / location","text","e.g. Velachery"],
+  ["address","Full address","text","Door no, street, area, Chennai"],["email","Email","email","doctor@example.com"],["timings","Clinic timings","text","e.g. Mon–Sat 10am–1pm, 5–8pm"],
+  ["bestTime","Best time to visit","text","e.g. After 6 pm, avoid Mondays"],["docNotes","Notes about the doctor","text","Assistant's name, preferences, etc."]];
+let infoMap={}, extraStarted=false;
+function mergeInfo(d){const i=infoMap[d.id];if(!i)return d;const r={...d,_info:i};for(const [k] of INFO_FIELDS)if(i[k]!==undefined&&String(i[k]).trim()!=="")r[k]=i[k];return r}
+function infoMissing(d){const m=[];if(!String(d.phone||"").trim())m.push("phone");if(!String(d.area||"").trim()&&!String(d.address||"").trim())m.push("address");if(!String(d.speciality||"").trim())m.push("speciality");return m}
+function ensureExtraSubs(){
+  if(extraStarted||!db||!uid||!loggedIn())return; extraStarted=true;
+  db.collection("docinfo").onSnapshot(s=>{const m={};s.docs.forEach(d=>m[d.id]=d.data());infoMap=m;render()},()=>{});
+  watchOrders(uid); if(canAdmin)db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
+}
+function openDocInfo(execId,docId){
+  const row=allDoctorRows().find(r=>r.doc.id===docId); if(!row)return; const d=row.doc;
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">✏️ Edit doctor info</div><div class="small" style="color:#b9cbdd">${esc(d.doctor)} · ${esc(d.hospital)}</div></div><button class="x" id="diX">×</button></div>
+  <div class="sheet-b">
+    <p class="small muted" style="margin-top:0">Update or fill in missing details. Doctor name and hospital can only be changed by the admin.</p>
+    ${INFO_FIELDS.map(([k,l,t,ph])=>`<span class="lbl">${l}</span><input type="${t==="tel"?"tel":"text"}" ${t==="tel"?'inputmode="tel"':""} id="di_${k}" value="${esc(d[k]||"")}" placeholder="${esc(ph)}">`).join("")}
+    <div class="err" id="diErr"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">${canAdmin&&d._info?`<button class="btn" id="diReset" style="margin-right:auto">Reset to Excel data</button>`:""}<button class="btn" id="diC">Cancel</button><button class="btn pri" id="diGo">Save</button></div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  const back=()=>openDoctor(execId,docId);
+  $("#diX").onclick=$("#diC").onclick=back;
+  const rs=$("#diReset"); if(rs)rs.onclick=async()=>{try{await db.doc("docinfo/"+docId).delete();logAct("doctor",`Reset ${d.doctor}'s info to the Excel data`);toast("Reset to Excel data");setTimeout(back,300)}catch(e){toast("Couldn't reset")}};
+  $("#diGo").onclick=async()=>{
+    const v={}, changed=[];
+    for(const [k,l] of INFO_FIELDS){v[k]=$("#di_"+k).value.trim();if(v[k]!==String(d[k]||"").trim())changed.push(l)}
+    if(v.phone&&v.phone.replace(/\D/g,"").length<8)return $("#diErr").textContent="Check the phone number.";
+    if(!changed.length)return back();
+    const a=actor(), btn=$("#diGo"); btn.disabled=true; btn.textContent="Saving…";
+    try{
+      await db.doc("docinfo/"+docId).set({...(infoMap[docId]||{}),...v,doctor:d.doctor,hospital:d.hospital,by:a.id,byName:a.name,at:Date.now()});
+      infoMap[docId]={...(infoMap[docId]||{}),...v,by:a.id,byName:a.name,at:Date.now()};
+      logAct("doctor",`Updated ${d.doctor} (${d.hospital}): ${changed.join(", ")}`);
+      toast("Doctor info saved ✓"); back();
+    }catch(x){btn.disabled=false;btn.textContent="Save";$("#diErr").textContent=x.code==="invalid_argument"?"You don't have permission to edit this doctor.":"Couldn't save ("+(x.code||x.message)+")"}
+  };
+}
+function docInfoExtraHtml(d){
+  const ex=[["email","Email"],["timings","Clinic timings"],["bestTime","Best time to visit"],["docNotes","Notes"]].filter(([k])=>d[k]);
+  const miss=infoMissing(d);
+  return (ex.length?`<div class="auto" style="margin-top:-6px">${ex.map(([k,l])=>`<div>${l}<b style="font-weight:500">${esc(d[k])}</b></div>`).join("")}</div>`:"")+
+    `<div class="row" style="margin:-6px 0 14px">${miss.length?`<span class="chip fu">⚠️ Missing: ${miss.join(", ")}</span>`:""}
+     ${d._info?`<span class="small muted">Info updated by ${esc(d._info.byName||d._info.by||"")} · ${esc(fmtDs(ymd(new Date(d._info.at||Date.now()))))}</span>`:""}
+     <div class="grow"></div>${canWrite&&db?`<button class="btn sm" id="diOpen">✏️ Edit doctor info</button>`:""}</div>`;
 }
 
 /* ---------- confirm box ---------- */
