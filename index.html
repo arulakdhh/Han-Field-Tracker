@@ -2231,7 +2231,7 @@ function confirmBox(text,yes,label){
    Quotations: fquotes/<EXEC>_<FY>_<SEQ>   number DHH/QTN/<EXEC>/<FY>/<SEQ>
    PDF: quote-pdf.js (same format as the inventory quotation)
    ========================================================= */
-let catalog=null, catCo=null, catAt="", quotes=[], qSubStarted=false, qForm=null, qLoaded=false;
+let catErr="", catalog=null, catCo=null, catAt="", quotes=[], qSubStarted=false, qForm=null, qLoaded=false;
 const Q_STATUS={open:"Open",accepted:"Accepted",lost:"Lost",cancelled:"Cancelled"};
 const Q_CLR={open:"#2563a8",accepted:"#1f9d6f",lost:"#d64545",cancelled:"#5f6f80"};
 function qCfg(){const q=master.quote||{};return {maxDisc:q.maxDisc==null?10:+q.maxDisc,validDays:+q.validDays||30}}
@@ -2241,7 +2241,7 @@ function inr2(n){return "₹"+(+n||0).toLocaleString("en-IN",{minimumFractionDig
 function startQuoteSubs(){
   if(qSubStarted||!db||!uid||!loggedIn())return; qSubStarted=true;
   const rer=()=>{if(view==="quotes"&&!qForm)render()};
-  db.doc("catalog/products").onSnapshot(s=>{const d=s.exists?s.data():null;catalog=(d&&d.list)||[];catAt=(d&&d.updatedAt)||"";rer()},()=>{catalog=[];rer()});
+  db.doc("catalog/products").onSnapshot(s=>{const d=s.exists?s.data():null;catErr=d?"":"missing";catalog=(d&&d.list)||[];catAt=(d&&d.updatedAt)||"";rer()},e=>{catErr=/invalid_argument|permission/i.test((e&&(e.code||e.message))||"")?"denied":"error:"+((e&&(e.code||e.message))||"");catalog=[];rer()});
   db.doc("catalog/company").onSnapshot(s=>{catCo=s.exists?s.data():null},()=>{});
   const all=canAdmin||realAdmin;
   const q=all?db.collection("fquotes"):db.collection("fquotes").where("exec","==",session);
@@ -2272,6 +2272,12 @@ async function quotePdf(q,share){
 }
 
 /* ---------- Quotations tab ---------- */
+function catNote(){
+  if(catErr==="denied")return canAdmin?`Can't read the product list: the <b>Firestore rules</b> haven't been updated. Firebase → Firestore Database → Rules → paste the new <b>firestore.rules</b> → Publish.`:`Can't read the product list (permission). Ask the admin to update the Firestore rules.`;
+  if(catErr==="missing")return canAdmin?`No product list yet. Open <a href="inventory/" target="_blank" style="color:var(--accent);font-weight:700">drhanfield.netlify.app/inventory/</a>, log in as <b>ADMIN</b> and restore your inventory backup (Admin panel → Export &amp; backup → Restore). The list is sent here automatically within a few seconds.`:`The product list from the inventory isn't ready yet. Ask the admin to open the inventory once.`;
+  if(catErr)return `Couldn't load the product list (${esc(catErr.slice(6))}). Check the internet connection and reload.`;
+  return `The product list is empty. Ask the admin.`;
+}
 function vQuotes(){
   const all=myQuotes(); let list=all;
   if(canAdmin&&filt.qExec&&filt.qExec!=="all")list=list.filter(q=>q.exec===filt.qExec);
@@ -2285,7 +2291,7 @@ function vQuotes(){
     <div class="stat"><b>${inr(sum(acc))}</b><span>Accepted · ${acc.length}</span></div>
     <div class="stat"><b>${catalog?catalog.length:"…"}</b><span>Products available</span></div></div>
   <h2>${canAdmin?"All quotations":"My quotations"}</h2>`;
-  if(catalog&&!catalog.length)h+=`<div class="notice">The product list from the inventory isn't available yet. ${canAdmin?"Open the inventory (<b>/inventory</b>) once while signed in, and it publishes the list automatically.":"Ask the admin to open the inventory once to publish it."}</div>`;
+  if(catalog&&!catalog.length)h+=`<div class="notice">${catNote()}</div>`;
   h+=`<div class="row" style="margin-bottom:10px">
     ${canAdmin?`<select id="qExec" style="max-width:230px"><option value="all">All executives</option>${master.executives.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select>`:""}
     <input type="search" id="qQ" placeholder="Search no., doctor, hospital, product…" style="flex:1;min-width:180px" value="${esc(filt.qQ||"")}">
@@ -2384,7 +2390,7 @@ async function openQuoteForm(q,docId){
   const v=x=>esc(x==null?"":x);
   $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${q?"Edit "+esc(q.no):"New quotation"} · ${esc(d.doctor)}</div><div class="small" style="color:#b9cbdd">${esc(d.hospital)}${canAdmin?" · "+esc(e.name):""}</div></div><button class="x" id="qfX">×</button></div>
   <div class="sheet-b">
-    ${catalog===null?`<div class="notice info">Loading the product list…</div>`:!catalog.length?`<div class="notice">The product list from the inventory isn't available yet. Ask the admin.</div>`:""}
+    ${catalog===null?`<div class="notice info">Loading the product list…</div>`:!catalog.length?`<div class="notice">${catNote()}</div>`:""}
     <span class="lbl" style="margin-top:0">Quotation to</span>
     <input type="text" id="qfName" value="${v(c.name)}" placeholder="Hospital / clinic name">
     <textarea id="qfAddr" style="min-height:58px;margin-top:6px" placeholder="Address">${v(c.address)}</textarea>
@@ -2554,7 +2560,7 @@ function bindDoctorQuotes(d){
 function quoteSetupHtml(){
   const c=qCfg();
   return `<div class="card" style="margin-bottom:16px"><b>Quotations</b>
-    <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list (MRP only — purchase rates are never shared). ${catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
+    <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list (MRP only — purchase rates are never shared). ${catalog&&!catalog.length?`<span style="color:var(--red)">${catNote()}</span>`:catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
     <div class="row"><label class="small">Max total discount an executive can give (%) <input type="tel" inputmode="decimal" id="qcMax" value="${esc(c.maxDisc)}" style="max-width:80px"></label>
     <label class="small">Quotation valid for (days) <input type="tel" inputmode="numeric" id="qcDays" value="${esc(c.validDays)}" style="max-width:80px"></label>
     <button class="btn sm pri" id="qcSave">Save</button></div></div>`;
