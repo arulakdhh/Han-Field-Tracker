@@ -256,6 +256,7 @@ header .brand,header nav{position:relative;z-index:1}
     <a href="#briefings" data-v="briefings">WhatsApp Briefings<span class="n" id="brN" hidden></span></a>
     <a href="#reports" data-v="reports">Reports &amp; Export</a>
     <a href="#activity" data-v="activity">Activity Log</a>
+    <a href="#convert" data-v="convert">Data Converter</a>
     <a href="#setup" data-v="setup">Setup</a>
   </nav>
 </header>
@@ -402,8 +403,8 @@ function fixMe(){
 $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.setItem("han_exec",me)}catch(_){};render()});
 
 /* ---------- routing ---------- */
-const ADMIN_VIEWS=["briefings","reports","activity","setup"];
-function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","help","briefings","reports","activity","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
+const ADMIN_VIEWS=["briefings","reports","activity","convert","setup"];
+function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- render ---------- */
@@ -433,6 +434,7 @@ function render(){
       main.dataset.screen=k; main.innerHTML=h+(loginStage==="login"?loginHero():"")+vLogin()+`<p style="text-align:center;margin-top:-10px"><a href="#" id="lgHelp" style="color:var(--accent);font-weight:600;text-decoration:none">📖 How to use this app</a></p>`; bindLogin(); {const hl=$("#lgHelp");if(hl)hl.onclick=e=>{e.preventDefault();openHelpSheet()}} afterRender(); return;
     }
   }
+  if(view==="convert"&&canAdmin){$("#nav").hidden=false;if(main.dataset.screen!=="convert"){main.dataset.screen="convert";main.innerHTML=h+vConvert();bindConvert();afterRender()}ensureExtraSubs();return}
   $("#nav").hidden=false; main.dataset.screen="";
   if(!visitsLoaded){main.innerHTML=h+'<div class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>';return}
   if(view==="visits")h+=vVisits(bd);
@@ -775,6 +777,7 @@ function vSetup(){
     <div class="row"><input type="file" id="imp" accept=".xlsx,.xls" style="max-width:320px">
     <label class="small"><input type="checkbox" id="impRep"> Replace the existing list (otherwise add / update)</label>
     <button class="btn sm" id="tpl">⬇ Download template</button></div>
+    <p class="small" style="margin:8px 0 0">Have a raw hospital / doctor sheet instead? Use the <a href="#convert" style="color:var(--accent);font-weight:600">🔄 Data Converter</a>.</p>
     <div class="err" id="impErr" style="white-space:pre-line"></div></div>
   <div class="grid" style="margin-bottom:16px">
    <div class="card"><b>Add one executive</b>
@@ -1055,9 +1058,11 @@ function applyRows(exRows,docRows,replace){
     const e=id?ex.find(z=>z.id===id):ex.find(z=>z.name.toLowerCase()===en.toLowerCase());
     if(!e){problems.push(`Doctor row ${i+2} (${dn}): Executive ID "${id||en}" is not in the Executives sheet.`);return}
     const did=slug(dn+"-"+hn);
+    const other=ex.find(z=>z!==e&&(z.doctors||[]).some(x=>x.id===did));
+    if(other){problems.push(`Doctor row ${i+2} (${dn}, ${hn}): already assigned to ${other.name} (${other.id}) — skipped. Use Reassign on the doctor page to move it.`);return}
     const d={id:did,doctor:dn,hospital:hn,area:gv(r,"area","location"),address:gv(r,"address","doctor address","hospital address"),zone:zoneFrom(gv(r,"zone","chennai zone")),speciality:gv(r,"speciality","specialty"),phone:gv(r,"doctor phone"),role:roleFrom(gv(r,"purchase role","role"))};
     if(!d.zone)delete d.zone; if(!d.address)delete d.address;
-    if(!d.role)problems.push(`Doctor row ${i+2} (${dn}): Purchase Role should be Purchase / No Purchase / Referral Only.`);
+    if(!d.role&&gv(r,"purchase role","role"))problems.push(`Doctor row ${i+2} (${dn}): Purchase Role "${gv(r,"purchase role","role")}" not recognised — use Purchase / No Purchase / Referral Only.`);
     const k=e.doctors.findIndex(z=>z.id===did); if(k>=0)e.doctors[k]={...e.doctors[k],...d}; else {e.doctors.push(d);nD++}
   });
   return {ex,pw,problems,nE,nD};
@@ -1956,6 +1961,220 @@ function celebrate(big){
     p.style.setProperty("--dx",((Math.random()-.5)*(big?760:480))+"px");p.style.setProperty("--dy",(-(160+Math.random()*(big?380:240)))+"px");
     p.style.setProperty("--r",(Math.random()*900-450)+"deg");p.style.animationDelay=(Math.random()*.18)+"s";if(i%3===0)p.style.borderRadius="50%";box.appendChild(p)}
   document.body.appendChild(box); setTimeout(()=>box.remove(),2400);
+}
+
+/* =========================================================
+   DATA CONVERTER (admin) – raw hospital/doctor sheet → upload format
+   Based on DHH Data Converter; picks existing executives from the
+   team list and can import straight into the app.
+   ========================================================= */
+const CV_DH=["Executive ID","Hospital","Area","Address","Zone","Doctor Name","Speciality","Doctor Phone","Purchase Role"];
+const CV_EH=["Executive ID","Executive Name","WhatsApp Number","Default Password"];
+const CV_FIELDS=[["hospital","Hospital name",/hosp/i],["location","Location / Address",/loc|addr|area|place/i],["doctor","Doctor name(s)",/doc|dr\b|name/i],["phone","Contact number",/contact|phone|mobile|number|ph/i],["speciality","Speciality (optional)",/spec|dept/i]];
+const CV_AREAS=["East Tambaram","West Tambaram","Tambaram","Chromepet","Pallavaram","Selaiyur","Madipakkam","Mugalivakkam","Potheri","Kattankulathur","Vandalur","Pallikaranai","Kovilambakkam","Nanganallur","Medavakkam","Mambakkam","Kovalam","Guduvanchery","Urapakkam","Perungalathur","Royapettah","Mylapore","Velachery","Adyar","T. Nagar","T Nagar","Anna Nagar","Porur","Vadapalani","Guindy","Saidapet","Alandur","Perambur","Kilpauk","Egmore","Nungambakkam","Thoraipakkam","Sholinganallur","Perumbakkam","Keelkattalai","Hasthinapuram","Pammal","Valasaravakkam","Ashok Nagar","K.K. Nagar","KK Nagar","Ambattur","Avadi","Poonamallee","Tiruvottiyur","Thiruvanmiyur","Besant Nagar","Ekkatuthangal","Ramapuram","Maraimalai Nagar","Chengalpattu","OMR","ECR","Siruseri","Navalur","Kelambakkam","Thiruporur","Royapuram","Washermanpet","Purasawalkam","Kodambakkam","Virugambakkam","Koyambedu","Mogappair","Thirumangalam","Kolathur","Madhavaram","Red Hills","Manapakkam","Nandambakkam","Iyyappanthangal"];
+const CV_ALIAS={thambaram:"tambaram",myilapore:"mylapore",royyapetah:"royapettah",palikaranai:"pallikaranai",mambakam:"mambakkam",medavakam:"medavakkam",guduvancherry:"guduvanchery",kavery:"kauvery",hindhu:"hindu"};
+const cv={rawHead:[],rawRows:[],rawName:"",batches:[],dRows:[],eRows:[],tab:"D",msg:"",dlName:""};
+const cvClean=s=>String(s??"").replace(/\s+/g," ").trim();
+const cvTitle=s=>s.toLowerCase().replace(/\b([a-z])/g,m=>m.toUpperCase());
+function cvFix(s){let t=s;for(const[a,b]of Object.entries(CV_ALIAS))t=t.replace(new RegExp("\\b"+a+"\\b","gi"),m=>m[0]===m[0].toUpperCase()?b[0].toUpperCase()+b.slice(1):b);return t}
+function cvHosp(s){let t=cvTitle(cvClean(s).replace(/&/g," & ")).replace(/\s+/g," ");
+  t=t.replace(/\bSrm\b/g,"SRM").replace(/\bClinc\b/g,"Clinic").replace(/\bDr\.?\s*/g,"Dr. ").replace(/\bH & M\b/g,"H&M");return cvFix(t)}
+function cvArea(loc){
+  const orig=cvClean(loc),l=cvFix(orig); if(!l)return["",""];
+  const low=l.toLowerCase(), GENERIC=["tambaram"]; let best="",bestPos=1e9,gen="";
+  for(const a of CV_AREAS){
+    const re=new RegExp("\\b"+a.toLowerCase().replace(/\./g,"\\.")+"\\b","g");let m,pos=-1;
+    while((m=re.exec(low))){if(!/^\s*(main\s*)?(rd|road|high road)\b/.test(low.slice(m.index+a.length))){pos=m.index;break}}
+    if(pos<0)continue; if(GENERIC.includes(a.toLowerCase())){gen=a;continue}
+    if(pos<bestPos||(pos===bestPos&&a.length>best.length)){best=a;bestPos=pos}
+  }
+  best=best||gen;
+  const isAddress=l.length>40||/\d{6}|,.*,/.test(l);
+  if(!isAddress){const last=l.split(",").map(cvClean).filter(Boolean).pop()||l;return[cvTitle(last.replace(/\.$/,"")).replace(/\bOmr\b/,"OMR").replace(/\bEcr\b/,"ECR").replace(/\bGst\b/i,"GST"),""]}
+  return[best||"",orig];
+}
+function cvDoctors(s,split){
+  let t=cvClean(s).replace(/\bDR\.([A-Z]),/gi,"DR.$1.");
+  const parts=split?t.split(/\s*(?:&|,|\band\b|\/|;)\s*(?=(?:DR|[A-Z]))/i):[t], out=[];
+  for(let p of parts){
+    p=cvClean(p); if(!p)continue;
+    if(/^ortho\s*surgeon$/i.test(p)){out.push("Ortho Surgeon (name not given)");continue}
+    p=p.replace(/\b(MS|MD|MBBS|DNB|D\.?ORTHO|M\.?CH)\b\.?/gi,"").replace(/\bORTHO(PAEDIC|PEDIC)?S?\b/gi,"").replace(/\bHOD\b/gi,"").replace(/\bHOSPITALS?\b/gi,"").replace(/\bSRM\b/gi,"");
+    p=p.replace(/^\s*DR\.?\s*/i,"").replace(/\.(?=\S)/g,". ").replace(/\s+/g," ").trim().replace(/[.,]$/,"");
+    if(!p)continue;
+    out.push("Dr. "+p.split(" ").map(w=>w.replace(".","").length<=2?w.toUpperCase():w[0].toUpperCase()+w.slice(1).toLowerCase()).join(" "));
+  }
+  return out.length?out:[cvClean(s)];
+}
+const cvPhone=v=>{const d=String(v??"").replace(/\.0$/,"").replace(/\D/g,"");return d.length>=10?d.slice(-10):(d||"")};
+function cvNextId(prefix){
+  prefix=(prefix||"DHH").toUpperCase(); let n=0, w=2;
+  for(const id of [...master.executives.map(e=>e.id),...cv.eRows.map(r=>r[0])]){
+    if(!id.startsWith(prefix))continue; const k=parseInt(id.slice(prefix.length),10); if(!isNaN(k)){n=Math.max(n,k);w=Math.max(w,id.length-prefix.length)}
+  }
+  return prefix+String(n+1).padStart(w,"0");
+}
+
+/* ---------- view ---------- */
+function vConvert(){
+  const ex=master.executives;
+  return `<h2>Data converter</h2>
+  <p class="small muted" style="margin-top:-6px">Turn a raw hospital / doctor sheet into the upload format, then import it straight into the app or download it as Excel.</p>
+  <div class="card" style="margin-bottom:14px"><b>1 · Executive</b>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:10px">
+      <div style="grid-column:1/-1"><span class="lbl" style="margin-top:0">Choose executive</span>
+        <select id="cvSel"><option value="__new">➕ New executive</option>${ex.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select></div>
+      <div class="cvNew"><span class="lbl">ID prefix</span><input type="text" id="cvPre" value="DHH"></div>
+      <div><span class="lbl">Executive ID</span><input type="text" id="cvId"></div>
+      <div><span class="lbl">Executive name</span><input type="text" id="cvName" placeholder="e.g. Sham"></div>
+      <div><span class="lbl">WhatsApp number</span><input type="tel" id="cvPh" placeholder="10-digit mobile"></div>
+      <div class="cvNew"><span class="lbl">Default password</span><input type="text" id="cvPw" placeholder="Blank = WhatsApp no."></div>
+    </div>
+    <p class="small muted cvOld" style="margin:8px 0 0">Existing executive: details come from the team list. Their login and password are not changed.</p>
+  </div>
+  <div class="card" style="margin-bottom:14px"><b>2 · Raw data file</b>
+    <div id="cvDrop" style="border:2px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted);cursor:pointer;margin-top:10px">Drop the raw .xlsx / .xls / .csv here, or tap to choose</div>
+    <input type="file" id="cvFile" accept=".xlsx,.xls,.csv" hidden>
+    <div id="cvMapWrap" hidden style="margin-top:12px">
+      <p class="small muted" style="margin:0 0 6px">Columns found automatically — change any that are wrong.</p>
+      <div class="grid" id="cvMap" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px"></div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:8px">
+        <div><span class="lbl">Default speciality</span><input type="text" id="cvSpec" value="Orthopaedics"></div>
+        <div><span class="lbl">Default zone</span><select id="cvZone"><option value="">Auto-detect</option><option>North Chennai</option><option>Central Chennai</option><option>South Chennai</option><option>Outside Chennai</option></select></div>
+        <div><span class="lbl">Default purchase role</span><select id="cvRole"><option value=""></option><option>Purchase</option><option>Referral Only</option><option>No Purchase</option></select></div>
+        <div><span class="lbl">Split multiple doctors</span><select id="cvSplit"><option value="1">Yes, one row each</option><option value="0">No</option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn pri" id="cvAdd">Add to output</button><span class="small" id="cvAddMsg"></span></div>
+    </div>
+    <div id="cvBatches"></div>
+  </div>
+  <div class="card"><b>3 · Review &amp; import</b>
+    <div class="row" style="margin:10px 0 6px"><div class="seg"><button type="button" id="cvTabD">Doctor Assignments (<span id="cvCntD">0</span>)</button><button type="button" id="cvTabE">Executives (<span id="cvCntE">0</span>)</button></div></div>
+    <p class="small muted" style="margin:0 0 6px">Tap any cell to edit it before importing.</p>
+    <div class="tbl" style="max-height:460px"><table id="cvTbl"></table></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn pri" id="cvImp" disabled>✅ Import into app</button>
+      <input type="text" id="cvFname" style="max-width:220px" placeholder="File name">
+      <button class="btn" id="cvDl" disabled>⬇ Download .xlsx</button>
+      <div class="grow"></div><button class="btn sm" id="cvClear">Start over</button>
+    </div>
+    <div class="small" id="cvMsg" style="margin-top:8px;white-space:pre-line"></div>
+  </div>`;
+}
+function bindConvert(){
+  const sel=$("#cvSel");
+  const fill=()=>{
+    const v=sel.value, isNew=v==="__new";
+    document.querySelectorAll(".cvNew").forEach(x=>x.hidden=!isNew); document.querySelectorAll(".cvOld").forEach(x=>x.hidden=isNew);
+    ["cvId","cvName","cvPh"].forEach(k=>$("#"+k).readOnly=!isNew);
+    if(isNew){$("#cvId").value=cvNextId($("#cvPre").value);$("#cvName").value="";$("#cvPh").value="";$("#cvPw").value=""}
+    else{const e=execById(v);$("#cvId").value=e.id;$("#cvName").value=e.name;$("#cvPh").value=e.phone||""}
+  };
+  sel.onchange=fill; $("#cvPre").oninput=()=>{if(sel.value==="__new")$("#cvId").value=cvNextId($("#cvPre").value)}; fill();
+  const drop=$("#cvDrop");
+  drop.onclick=()=>$("#cvFile").click();
+  drop.ondragover=e=>{e.preventDefault();drop.style.borderColor="var(--accent)"};
+  drop.ondragleave=()=>{drop.style.borderColor=""};
+  drop.ondrop=e=>{e.preventDefault();drop.style.borderColor="";if(e.dataTransfer.files[0])cvRead(e.dataTransfer.files[0])};
+  $("#cvFile").onchange=e=>{if(e.target.files[0])cvRead(e.target.files[0]);e.target.value=""};
+  $("#cvAdd").onclick=cvAddBatch;
+  $("#cvTabD").onclick=()=>{cv.tab="D";cvDraw()}; $("#cvTabE").onclick=()=>{cv.tab="E";cvDraw()};
+  $("#cvFname").oninput=e=>{cv.dlName=e.target.value};
+  $("#cvClear").onclick=()=>{Object.assign(cv,{rawHead:[],rawRows:[],rawName:"",batches:[],dRows:[],eRows:[],msg:""});$("#cvMapWrap").hidden=true;$("#cvDrop").textContent="Drop the raw .xlsx / .xls / .csv here, or tap to choose";fill();cvDraw()};
+  $("#cvDl").onclick=cvDownload; $("#cvImp").onclick=cvImport;
+  cvDraw();
+}
+function cvRead(f){
+  const r=new FileReader();
+  r.onload=ev=>{try{
+    if(!window.XLSX)throw new Error("Excel library didn't load — check internet and reload.");
+    const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array"});
+    const arr=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:"",raw:false});
+    let hi=arr.findIndex(r=>r.filter(c=>cvClean(c)).length>=3); if(hi<0)hi=0;
+    cv.rawHead=arr[hi].map(cvClean); cv.rawRows=arr.slice(hi+1).filter(r=>r.some(c=>cvClean(c))); cv.rawName=f.name;
+    const taken=new Set();
+    $("#cvMap").innerHTML=CV_FIELDS.map(([key,lab,re])=>{
+      let idx=cv.rawHead.findIndex((h,i)=>!taken.has(i)&&re.test(h)&&!(key==="doctor"&&/hosp/i.test(h))); if(idx>=0)taken.add(idx);
+      return `<div><span class="lbl">${lab}</span><select data-k="${key}"><option value="-1">— none —</option>${cv.rawHead.map((h,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(h||"Column "+(i+1))}</option>`).join("")}</select></div>`}).join("");
+    $("#cvMapWrap").hidden=false; $("#cvAddMsg").textContent="";
+    $("#cvDrop").textContent=`Loaded: ${f.name} — ${cv.rawRows.length} rows (tap to choose another)`;
+  }catch(err){$("#cvDrop").textContent="Couldn't read that file: "+err.message}};
+  r.readAsArrayBuffer(f);
+}
+function cvAddBatch(){
+  const msg=$("#cvAddMsg"), id=normId($("#cvId").value), name=cvClean($("#cvName").value), ph=cvPhone($("#cvPh").value), isNew=$("#cvSel").value==="__new";
+  if(!id||!name){msg.innerHTML='<span style="color:var(--red)">Fill in the Executive ID and name first.</span>';return}
+  if(isNew&&execById(id)){msg.innerHTML=`<span style="color:var(--red)">${esc(id)} already exists — pick it from the list instead.</span>`;return}
+  const map={}; document.querySelectorAll("#cvMap select").forEach(s=>map[s.dataset.k]=+s.value);
+  if(map.hospital<0||map.doctor<0){msg.innerHTML='<span style="color:var(--red)">Pick the Hospital and Doctor columns.</span>';return}
+  const split=$("#cvSplit").value==="1", spec=cvClean($("#cvSpec").value), zone=$("#cvZone").value, role=$("#cvRole").value;
+  let n=0,lastH="",lastL="";
+  for(const r of cv.rawRows){
+    let h=cvClean(r[map.hospital]); const loc=map.location>=0?cvClean(r[map.location]):"";
+    if(!h&&!cvClean(r[map.doctor]))continue;
+    if(!h)h=lastH; lastH=h;
+    const [area,addr]=cvArea(loc||lastL); if(loc)lastL=loc;
+    const sp=map.speciality>=0&&cvClean(r[map.speciality])?cvTitle(cvClean(r[map.speciality])):spec;
+    const docs=cvDoctors(r[map.doctor],split), phone=map.phone>=0?cvPhone(r[map.phone]):"";
+    for(const d of docs){cv.dRows.push([id,cvHosp(h),area,addr,zone,d,sp,docs.length===1?phone:(phone&&d===docs[0]?phone:""),role]);n++}
+  }
+  const exRow=cv.eRows.find(e=>e[0]===id);
+  if(exRow){exRow[1]=name;exRow[2]=ph;if(isNew)exRow[3]=$("#cvPw").value.trim()}else cv.eRows.push([id,name,ph,isNew?$("#cvPw").value.trim():"",isNew?"new":"existing"]);
+  cv.batches.push({id,name,file:cv.rawName,n,isNew});
+  msg.textContent=`Added ${n} doctor rows for ${name} (${id}).`;
+  cv.rawRows=[]; $("#cvMapWrap").hidden=true; $("#cvDrop").textContent="Drop the next raw file here (for another executive), or tap to choose";
+  $("#cvSel").value="__new"; $("#cvSel").onchange(); cvDraw();
+}
+function cvDraw(){
+  $("#cvBatches").innerHTML=cv.batches.map((b,i)=>`<div class="row" style="border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin-top:8px"><span class="grow small"><b style="color:var(--accent)">${esc(b.id)}</b> · ${esc(b.name)} ${b.isNew?'<span class="chip pos">new</span>':'<span class="chip role">existing</span>'} · ${esc(b.file)} → ${b.n} rows</span><button class="btn sm" data-cvrm="${i}">Remove</button></div>`).join("");
+  document.querySelectorAll("[data-cvrm]").forEach(b=>b.onclick=()=>{const x=cv.batches.splice(+b.dataset.cvrm,1)[0];cv.dRows=cv.dRows.filter(r=>r[0]!==x.id);if(!cv.batches.some(y=>y.id===x.id))cv.eRows=cv.eRows.filter(r=>r[0]!==x.id);if($("#cvSel").value==="__new")$("#cvId").value=cvNextId($("#cvPre").value);cvDraw()});
+  $("#cvCntD").textContent=cv.dRows.length; $("#cvCntE").textContent=cv.eRows.length;
+  $("#cvTabD").classList.toggle("on",cv.tab==="D"); $("#cvTabE").classList.toggle("on",cv.tab==="E");
+  const head=cv.tab==="D"?CV_DH:CV_EH, rows=cv.tab==="D"?cv.dRows:cv.eRows;
+  $("#cvTbl").innerHTML=`<thead><tr><th>#</th>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>`+(rows.length?rows.map((r,i)=>`<tr><td class="muted">${i+1}</td>${head.map((_,j)=>{
+    const c=r[j]??"";
+    if(cv.tab==="D"&&j===8)return `<td><select data-cr="${i}" data-cc="${j}" style="padding:3px">${["","Purchase","Referral Only","No Purchase"].map(o=>`<option ${o===c?"selected":""}>${o}</option>`).join("")}</select></td>`;
+    if(cv.tab==="E"&&j===3&&r[4]==="existing")return `<td class="muted small">unchanged</td>`;
+    return `<td contenteditable="true" data-cr="${i}" data-cc="${j}">${esc(c)}</td>`}).join("")}</tr>`).join(""):`<tr><td colspan="${head.length+1}" class="muted" style="text-align:center;padding:20px">Nothing added yet.</td></tr>`)+`</tbody>`;
+  document.querySelectorAll("#cvTbl [data-cr]").forEach(el=>{
+    el.addEventListener(el.tagName==="SELECT"?"change":"blur",()=>{(cv.tab==="D"?cv.dRows:cv.eRows)[+el.dataset.cr][+el.dataset.cc]=el.tagName==="SELECT"?el.value:cvClean(el.textContent)});
+  });
+  $("#cvDl").disabled=$("#cvImp").disabled=!cv.dRows.length||!(canWrite&&db);
+  const fn=$("#cvFname"); if(!cv.dlName){const d=new Date();fn.value=`DHH_upload_${pad(d.getDate())}${d.toLocaleString("en",{month:"short"})}${String(d.getFullYear()).slice(2)}.xlsx`}else fn.value=cv.dlName;
+}
+function cvRowsAsObjects(){
+  const ex=cv.eRows.map(r=>({"Executive ID":r[0],"Executive Name":r[1],"WhatsApp Number":r[2],"Default Password":r[4]==="existing"?"":r[3]}));
+  const dr=cv.dRows.map(r=>Object.fromEntries(CV_DH.map((h,j)=>[h,r[j]??""])));
+  return {ex,dr};
+}
+function cvDownload(){
+  if(!window.XLSX)return toast("Excel library didn't load");
+  const sheet=(head,rows,w)=>{const ws=XLSX.utils.aoa_to_sheet([head,...rows.map(r=>head.map((_,j)=>r[j]===""||r[j]==null?null:String(r[j])))]);ws["!cols"]=w.map(x=>({wch:x}));return ws};
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,sheet(CV_EH,cv.eRows.map(r=>[r[0],r[1],r[2],r[4]==="existing"?"":r[3]]),[14,22,18,18]),"Executives");
+  XLSX.utils.book_append_sheet(wb,sheet(CV_DH,cv.dRows,[12,36,22,60,14,30,16,14,16]),"Doctor Assignments");
+  let name=cvClean($("#cvFname").value)||"DHH_upload.xlsx"; if(!/\.xlsx$/i.test(name))name+=".xlsx";
+  save(name,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
+}
+async function cvImport(){
+  const m=$("#cvMsg"), btn=$("#cvImp"); m.textContent="";
+  const {ex,dr}=cvRowsAsObjects();
+  const existing=new Set(master.executives.map(e=>e.id));
+  const exForApply=ex.filter(r=>!existing.has(normId(r["Executive ID"])));   // existing executives keep their record
+  btn.disabled=true; btn.textContent="Importing…";
+  try{
+    const {ex:newEx,pw,problems,nE,nD}=applyRows(exForApply,dr,false);
+    for(const id of existing)delete pw[id];
+    master={...master,executives:newEx}; await saveMaster(`Imported · ${nE} new executive${nE===1?"":"s"} · ${nD} new doctors`);
+    for(const [id,p] of Object.entries(pw))if(p)await setDefaultPw(id,p);
+    logAct("admin",`Data converter import: ${nE} new executives, ${nD} new doctors (${cv.batches.map(b=>b.id).join(", ")})`);
+    m.innerHTML=`<span style="color:var(--green);font-weight:600">✅ Imported ${nD} new doctor${nD===1?"":"s"} and ${nE} new executive${nE===1?"":"s"}.</span>`+
+      (problems.length?`\nCheck these rows:\n${problems.slice(0,8).map(esc).join("\n")}${problems.length>8?`\n…and ${problems.length-8} more`:""}`:"")+
+      (nE?`\nNew executives log in with their ID and default password (blank = WhatsApp number).`:"");
+    Object.assign(cv,{batches:[],dRows:[],eRows:[]}); $("#cvSel").innerHTML=`<option value="__new">➕ New executive</option>${master.executives.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}`; $("#cvSel").onchange(); cvDraw();
+    if(nD)celebrate(false);
+  }catch(x){m.innerHTML=`<span style="color:var(--red)">Import failed: ${esc(x.message||x.code||x)}</span>`}
+  btn.textContent="✅ Import into app"; btn.disabled=!cv.dRows.length;
 }
 
 /* ---------- confirm box ---------- */
