@@ -185,7 +185,7 @@ function updateHeader(){
   const isA=session==="ADMIN", e=execById(session), k=session+"|"+(e?.name||"");
   mb.hidden=false; if(mb.dataset.k===k)return; mb.dataset.k=k;
   mb.innerHTML=(isA?`<span class="adm">Admin</span>`:`<b>${esc(e?.name||"")}</b><span class="idc">${esc(session)}</span>`)+
-    `<button class="hb" id="chPw">Change password</button><button class="hb" id="lgOut">Logout</button>`;
+    `<button class="hb" id="chPw" title="Change password"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2.5 2.5"/></svg></i><span class="hl">Change password</span></button><button class="hb" id="lgOut" title="Logout"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg></i><span class="hl">Logout</span></button>`;
   $("#lgOut").onclick=()=>fauth.signOut();
   $("#chPw").onclick=changePwForm;
 }

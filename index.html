@@ -237,6 +237,29 @@ header .brand,header nav{position:relative;z-index:1}
 .confetti i{position:absolute;top:0;width:8px;height:12px;border-radius:2px;animation:conf 1.9s cubic-bezier(.15,.7,.35,1) forwards}
 @keyframes conf{0%{transform:translate(0,0) rotate(0);opacity:1}45%{transform:translate(calc(var(--dx)*.6),var(--dy)) rotate(calc(var(--r)*.5));opacity:1}100%{transform:translate(var(--dx),160px) rotate(var(--r));opacity:0}}
 @media (max-width:640px){.ecg{width:70%}.hero{margin-top:10px}}
+/* ===== header: compact on phones ===== */
+.hb i{font-style:normal;display:none;line-height:0}.hb i svg{width:17px;height:17px;display:block}
+#meBox{flex-wrap:nowrap;white-space:nowrap}
+.brand>div:nth-of-type(1){min-width:0}
+.brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){
+  header{padding:10px 12px 0}
+  .brand{gap:9px}.brand img{width:34px;height:32px;flex:none}
+  .brand h1{font-size:15.5px}
+  .who{flex-wrap:nowrap;gap:6px}
+  .hb{padding:6px 7px;display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px}
+  .hb i{display:block}.hb .hl{display:none}
+  #thBtn{font-size:14px!important;padding:5px 7px!important}
+  .idc{display:none}
+  .adm{font-size:11px;padding:3px 6px}
+  .brand h1{font-size:15px;letter-spacing:0}
+  .who{gap:5px}
+  .hb{min-width:32px;height:32px;padding:5px 6px}
+  #thBtn{padding:4px 6px!important}
+  nav{margin-top:8px;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}
+  nav a{padding:10px 11px;font-size:13.5px}
+}
+@media (max-width:370px){#meBox .adm{display:none}.brand h1{font-size:14px}.brand img{width:30px;height:28px}header{padding:10px 10px 0}}
 </style>
 </head>
 <body>
@@ -1242,8 +1265,8 @@ function updateHeader(){
   if(!loggedIn()){mb.hidden=true;mb.innerHTML="";mb.dataset.k="";return}
   const isA=session==="ADMIN", ro=realAdmin&&!isA, e=execById(session);
   const k=session+"|"+(e?.name||"")+"|"+ro; mb.hidden=false; if(mb.dataset.k===k)return; mb.dataset.k=k;
-  mb.innerHTML=isA?`<span class="adm">Admin</span><button class="hb" id="chPw">Change password</button><button class="hb" id="lgOut">Logout</button>`
-    :`<b>${esc(e?.name||"")}</b><span class="idc">${esc(session)}</span>${ro?"":`<button class="hb" id="chPw">Change password</button>`}<button class="hb" id="lgOut">Logout</button>`;
+  mb.innerHTML=isA?`<span class="adm">Admin</span><button class="hb" id="chPw" title="Change password"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2.5 2.5"/></svg></i><span class="hl">Change password</span></button><button class="hb" id="lgOut" title="Logout"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg></i><span class="hl">Logout</span></button>`
+    :`<b>${esc(e?.name||"")}</b><span class="idc">${esc(session)}</span>${ro?"":`<button class="hb" id="chPw" title="Change password"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2.5 2.5"/></svg></i><span class="hl">Change password</span></button>`}<button class="hb" id="lgOut" title="Logout"><i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></svg></i><span class="hl">Logout</span></button>`;
   $("#lgOut").onclick=()=>{if(!ro)remember(session,false);session="";me="";loginStage="login";mb.dataset.k="";$("#main").dataset.screen="";render()};
   const cp=$("#chPw"); if(cp)cp.onclick=changePwForm;
 }
@@ -1630,10 +1653,10 @@ function helpBody(){
     <li>Choose the final status:<ul style="padding-left:18px"><li><b>Positive:</b> expected confirmation date.</li><li><b>Follow-up:</b> reason + next date.</li><li><b>Negative:</b> reason.</li></ul></li>
     <li>Tap <b>Save meetup</b>.</li></ol>
     <p style="margin:8px 0 0">To plan a visit: open the doctor → <b>Schedule meeting</b> → pick date and time.<br><b>My Meetings</b> shows today's, upcoming and overdue meetings (overdue in red).</p>`)+
-  s("3. Passwords",`<p style="margin:0 0 6px"><b>Change your password:</b> tap <b>Change password</b> at the top → current password → new password twice.</p>
+  s("3. Passwords",`<p style="margin:0 0 6px"><b>Change your password:</b> tap <b>Change password</b> at the top (the key icon on phones) → current password → new password twice.</p>
     <p style="margin:0 0 4px"><b>Forgot your password:</b></p><ol style="margin:0;padding-left:20px">
     <li>Ask your admin to reset it.</li><li>The admin gives you a new default password.</li><li>Log in with your User ID + that default password.</li><li>The app asks you to set your own new password.</li></ol>
-    <p style="margin:8px 0 0">Your doctors and meetups are kept. <b>Logout:</b> tap <b>Logout</b> at the top, especially on a shared phone.</p>`)+
+    <p style="margin:8px 0 0">Your doctors and meetups are kept. <b>Logout:</b> tap <b>Logout</b> at the top (the arrow-out icon on phones), especially on a shared phone.</p>`)+
   s("4. Handing a doctor over (handshake)",`<p style="margin:0 0 6px">A doctor moves only when the other executive accepts. All past meetups and scheduled meetings move with the doctor.</p>
     <p style="margin:0 0 4px"><b>To send a doctor:</b></p><ol style="margin:0;padding-left:20px">
     <li><b>My Doctors</b> → tap the doctor → <b>Hand over to another executive</b>.</li>
@@ -2026,7 +2049,7 @@ function vConvert(){
         <select id="cvSel"><option value="__new">➕ New executive</option>${ex.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select></div>
       <div class="cvNew"><span class="lbl">ID prefix</span><input type="text" id="cvPre" value="DHH"></div>
       <div><span class="lbl">Executive ID</span><input type="text" id="cvId"></div>
-      <div><span class="lbl">Executive name</span><input type="text" id="cvName" placeholder="e.g. Sham"></div>
+      <div><span class="lbl">Executive name</span><input type="text" id="cvName" placeholder="e.g. Manivel"></div>
       <div><span class="lbl">WhatsApp number</span><input type="tel" id="cvPh" placeholder="10-digit mobile"></div>
       <div class="cvNew"><span class="lbl">Default password</span><input type="text" id="cvPw" placeholder="Blank = WhatsApp no."></div>
     </div>
