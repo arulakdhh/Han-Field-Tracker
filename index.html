@@ -216,10 +216,32 @@ main.anim tbody tr{animation:fadeIn .4s both}
 main{padding-bottom:30px}
 #lgId::placeholder{text-transform:none}
 @media (max-width:640px){.site-foot{font-size:12.5px}.site-foot .fin{gap:14px}}
+/* ================= CONCEPT ANIMATIONS ================= */
+.ecg{position:absolute;right:0;top:4px;width:58%;height:50px;opacity:.28;pointer-events:none;z-index:0}
+.ecg polyline{fill:none;stroke:var(--hsub);stroke-width:2.2;stroke-linejoin:round;stroke-dasharray:260 1100;stroke-dashoffset:1360;animation:ecg 3.6s linear infinite}
+@keyframes ecg{to{stroke-dashoffset:0}}
+header .brand,header nav{position:relative;z-index:1}
+.hero{max-width:390px;margin:18px auto -8px;text-align:center}
+.hero svg{width:100%;height:auto;display:block;overflow:visible}
+.hero .road{fill:none;stroke:var(--accent);stroke-width:3;stroke-dasharray:7 8;opacity:.5;animation:dash 1.2s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-15}}
+.hero .ring{fill:none;stroke:var(--accent);stroke-width:2.5;transform-box:fill-box;transform-origin:center;opacity:0;animation:ping 8s ease-out infinite}
+@keyframes ping{0%,19%{transform:scale(1);opacity:0}20%{opacity:.85}34%{transform:scale(2.8);opacity:0}100%{opacity:0}}
+.hero .won{opacity:0;transform-box:fill-box;transform-origin:center bottom;animation:won 8s ease-out infinite;animation-delay:5.2s}
+@keyframes won{0%,19%{opacity:0;transform:translateY(6px) scale(.8)}24%{opacity:1;transform:none}40%{opacity:1}48%,100%{opacity:0}}
+.hero .cap{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:4px}
+.hero .cap span{animation:capHi 8s infinite}
+.hero .cap span:nth-child(2){animation-delay:2.4s}.hero .cap span:nth-child(3){animation-delay:5.2s}
+@keyframes capHi{0%,19%{color:var(--muted)}22%,36%{color:var(--accent)}40%,100%{color:var(--muted)}}
+.confetti{position:fixed;left:0;right:0;top:55%;height:0;pointer-events:none;z-index:60}
+.confetti i{position:absolute;top:0;width:8px;height:12px;border-radius:2px;animation:conf 1.9s cubic-bezier(.15,.7,.35,1) forwards}
+@keyframes conf{0%{transform:translate(0,0) rotate(0);opacity:1}45%{transform:translate(calc(var(--dx)*.6),var(--dy)) rotate(calc(var(--r)*.5));opacity:1}100%{transform:translate(var(--dx),160px) rotate(var(--r));opacity:0}}
+@media (max-width:640px){.ecg{width:70%}.hero{margin-top:10px}}
 </style>
 </head>
 <body>
 <header>
+  <svg class="ecg" viewBox="0 0 600 60" preserveAspectRatio="none" aria-hidden="true"><polyline points="0,32 110,32 128,32 138,12 150,52 160,22 170,32 290,32 308,32 318,8 330,56 340,20 350,32 470,32 488,32 498,14 510,50 520,24 530,32 600,32"/></svg>
   <div class="brand">
     <img src="data:image/png;base64,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" alt="">
     <div><h1>Dr. Han Healthcare</h1><small>Field Sales · Doctor Visit Tracker</small></div>
@@ -408,7 +430,7 @@ function render(){
     if(!loggedIn()){
       $("#nav").hidden=true;
       const k="login:"+loginStage; if(main.dataset.screen===k)return;
-      main.dataset.screen=k; main.innerHTML=h+vLogin()+`<p style="text-align:center;margin-top:-10px"><a href="#" id="lgHelp" style="color:var(--accent);font-weight:600;text-decoration:none">📖 How to use this app</a></p>`; bindLogin(); {const hl=$("#lgHelp");if(hl)hl.onclick=e=>{e.preventDefault();openHelpSheet()}} afterRender(); return;
+      main.dataset.screen=k; main.innerHTML=h+(loginStage==="login"?loginHero():"")+vLogin()+`<p style="text-align:center;margin-top:-10px"><a href="#" id="lgHelp" style="color:var(--accent);font-weight:600;text-decoration:none">📖 How to use this app</a></p>`; bindLogin(); {const hl=$("#lgHelp");if(hl)hl.onclick=e=>{e.preventDefault();openHelpSheet()}} afterRender(); return;
     }
   }
   $("#nav").hidden=false; main.dataset.screen="";
@@ -909,7 +931,7 @@ async function saveVisit(){
   if(!uid){b.disabled=false;b.textContent="Save meetup";return err.textContent="Sign in to claude.ai to save visits."}
   try{
     if(canAdmin&&(!ownDoc||ownDoc.execId!==form.e.id)){const {uid:_u,...rest}=ownDoc||{};await db.doc("visits/"+uid).set({...rest,execId:form.e.id,execName:form.e.name,updated:Date.now()})}
-    await db.collection("visits/"+uid+"/v").add(rec);closeForm();toast("Meetup saved ✓");logAct("meetup",`${rec.doctor} (${rec.hospital}) – ${STATUS[rec.status]}${rec.reason?": "+rec.reason:""}${nextDate(rec)?" · next "+fmtDs(nextDate(rec)):""}`);await donePlans(rec);if(rec.status==="positive")orderAfterPositive(rec);else openDoctor(rec.execId,rec.doctorId)}
+    await db.collection("visits/"+uid+"/v").add(rec);closeForm();toast("Meetup saved ✓");if(rec.status==="positive")celebrate(false);logAct("meetup",`${rec.doctor} (${rec.hospital}) – ${STATUS[rec.status]}${rec.reason?": "+rec.reason:""}${nextDate(rec)?" · next "+fmtDs(nextDate(rec)):""}`);await donePlans(rec);if(rec.status==="positive")orderAfterPositive(rec);else openDoctor(rec.execId,rec.doctorId)}
   catch(e){b.disabled=false;b.textContent="Save meetup";err.textContent=e.code==="invalid_argument"?"You don't have permission to save. Ask the owner for Contributor access.":e.code==="quota_exceeded"?"Storage is full — export and archive old visits.":"Couldn't save ("+(e.code||e.message)+"). Try again."}
 }
 
@@ -1159,7 +1181,7 @@ function bindLogin(){
           await db.doc("claims/"+pendingId).set({uid,at:Date.now()});
         }
         session=pendingId; me=session==="ADMIN"?"":session; remember(session,pendingRem); loginStage="login"; pendingId="";
-        toast("Password set ✓ Welcome!"); logAct("login","First login – password set"); render();
+        toast("Password set ✓ Welcome!"); celebrate(false); logAct("login","First login – password set"); render();
       }catch(x){reset(x.code==="invalid_argument"?"You don't have permission to save. Ask your admin to share the page with you.":"Couldn't save ("+(x.code||x.message)+").")}
     };
     return;
@@ -1828,7 +1850,7 @@ async function saveOrder(){
     }
     logAct("order",`${rec.doctor} (${rec.hospital}) – ${STAGE_LBL[s]} – ${inr(oVal(rec))}${rec.title?" – "+rec.title:""}${s==="lost"?" – "+rec.lostWhy:""}`);
     $("#ov").classList.remove("on"); docOpen=false; oForm=null;
-    toast(s==="lost"?"Order marked lost":WON.has(s)?"Order saved ✓ 🎉":"Order saved ✓");
+    toast(s==="lost"?"Order marked lost":WON.has(s)?"Order saved ✓ 🎉":"Order saved ✓");if(WON.has(s)&&changed)celebrate(true);
     if(view!=="orders"){location.hash="orders"}else render();
   }catch(x){btn.disabled=false;btn.textContent="Save order";err.textContent=x.code==="invalid_argument"?"You don't have permission to save this order.":"Couldn't save ("+(x.code||x.message)+")"}
 }
@@ -1909,6 +1931,31 @@ function docInfoExtraHtml(d){
     `<div class="row" style="margin:-6px 0 14px">${miss.length?`<span class="chip fu">⚠️ Missing: ${miss.join(", ")}</span>`:""}
      ${d._info?`<span class="small muted">Info updated by ${esc(d._info.byName||d._info.by||"")} · ${esc(fmtDs(ymd(new Date(d._info.at||Date.now()))))}</span>`:""}
      <div class="grow"></div>${canWrite&&db?`<button class="btn sm" id="diOpen">✏️ Edit doctor info</button>`:""}</div>`;
+}
+
+/* ---------- concept animations ---------- */
+function loginHero(){
+  const pts=[[30,118],[115,58],[205,102],[325,44]], path="M30,118 L115,58 L205,102 L325,44";
+  const hosp=(x,y,i)=>`<g><circle class="ring" cx="${x}" cy="${y}" r="10" style="animation-delay:${[0,0,2.4,5.2][i]}s"/>
+    <rect x="${x-12}" y="${y-12}" width="24" height="24" rx="6" fill="#fff" stroke="var(--line)" stroke-width="1.5"/>
+    <rect x="${x-2.5}" y="${y-8}" width="5" height="16" rx="1.5" fill="#d64545"/><rect x="${x-8}" y="${y-2.5}" width="16" height="5" rx="1.5" fill="#d64545"/></g>`;
+  return `<div class="hero" aria-hidden="true"><svg viewBox="0 0 360 150">
+    <path class="road" d="${path}"/>
+    ${pts.slice(1).map((p,i)=>hosp(p[0],p[1],i+1)).join("")}
+    <g transform="translate(30 118)"><circle r="9" fill="var(--accent)" opacity=".18"/><circle r="4" fill="var(--accent)"/></g>
+    <g transform="translate(325 14)"><g class="won"><rect x="-34" y="-12" width="68" height="22" rx="11" fill="var(--accent)"/><text x="0" y="3.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Inter,sans-serif">Order ✓</text></g></g>
+    <g><animateMotion dur="8s" repeatCount="indefinite" path="${path}" keyPoints="0;0.296;0.296;0.597;0.597;1;1" keyTimes="0;0.2;0.3;0.5;0.6;0.85;1" calcMode="linear"/>
+      <circle r="11" fill="var(--navy)" opacity=".15"/><path d="M0,-14 C-7,-14 -9,-8 -9,-6 C-9,0 0,8 0,8 C0,8 9,0 9,-6 C9,-8 7,-14 0,-14 Z" fill="var(--navy)"/><circle cy="-6" r="3.2" fill="#fff"/></g>
+  </svg><div class="cap"><span>📍 Visit doctors</span><span>📝 Log meetups</span><span>💰 Win orders</span></div></div>`;
+}
+function celebrate(big){
+  try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return}catch(e){}
+  const n=big?70:30, c=["#1f9d6f","#f59e0b","#ec4899","#3b82f6","#ef4444","#14b8a6","#8b5cf6"], box=document.createElement("div");
+  box.className="confetti";
+  for(let i=0;i<n;i++){const p=document.createElement("i");p.style.left=(50+(Math.random()-.5)*20)+"%";p.style.background=c[i%c.length];
+    p.style.setProperty("--dx",((Math.random()-.5)*(big?760:480))+"px");p.style.setProperty("--dy",(-(160+Math.random()*(big?380:240)))+"px");
+    p.style.setProperty("--r",(Math.random()*900-450)+"deg");p.style.animationDelay=(Math.random()*.18)+"s";if(i%3===0)p.style.borderRadius="50%";box.appendChild(p)}
+  document.body.appendChild(box); setTimeout(()=>box.remove(),2400);
 }
 
 /* ---------- confirm box ---------- */

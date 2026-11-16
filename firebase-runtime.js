@@ -157,7 +157,7 @@ function bindLogin(){
       try{
         await fbUser.updatePassword(a);
         await db.doc("auth/"+session).update({mustChange:false,pwSetAt:Date.now()});
-        loginStage="login"; logAct("login","First login – password set"); toast("Password set ✓ Welcome!");
+        loginStage="login"; celebrate(false); logAct("login","First login – password set"); toast("Password set ✓ Welcome!");
       }catch(x){btn.disabled=false;btn.textContent="Save password & continue";err(fbErr(x))}
     };
     return;
