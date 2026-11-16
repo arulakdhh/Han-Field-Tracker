@@ -215,7 +215,7 @@ async function saveMaster(msg){
   if(!db)return toast("Database unavailable");
   if(saving)return; saving=true;
   try{
-    await db.doc("config/master").set({executives:master.executives,...(master.theme?{theme:master.theme}:{}),updated:Date.now()});
+    await db.doc("config/master").set({executives:master.executives,...(master.theme?{theme:master.theme}:{}),...(master.quote?{quote:master.quote}:{}),updated:Date.now()});
     await writeNames(); toast(msg||"Saved"); fixMe();
   }catch(e){toast(e.code==="invalid_argument"?"Only the admin can change the team list":"Couldn't save ("+e.code+")")}
   finally{saving=false;render()}

@@ -1,0 +1,32 @@
+DR. HAN – QUOTATIONS + INVENTORY ON FIREBASE  (update steps)
+=============================================================
+
+1. GITHUB (your drhanfield repo)
+   a. Replace: index.html, firebase-runtime.js
+   b. Add new file: quote-pdf.js
+   c. Add the whole "inventory" folder (10 files): Add file → Upload files → drag the folder in.
+   Netlify redeploys in about a minute.
+
+2. FIREBASE → Firestore Database → Rules
+   Paste the whole firestore.rules file → Publish.
+
+3. FIREBASE → Authentication
+   a. Sign-in method → Add new provider → Google → Enable → pick your support email → Save.
+   b. Settings → Authorized domains → Add domain → drhanfield.netlify.app
+
+4. MOVE YOUR INVENTORY DATA (one time)
+   a. Old register on claude.ai → Admin panel → Export & backup → Download backup (.json).
+   b. Open https://drhanfield.netlify.app/inventory/ → log in with User ID ADMIN + your admin password.
+   c. Admin panel → Export & backup → Restore → choose the .json file. Wait for "Restored … records".
+   From now on use only the new register; the claude.ai copy no longer updates.
+
+5. OFFICE STAFF (optional)
+   Inventory → Admin panel → Users & access → add their Gmail address and choose their panels.
+   They open /inventory/ and tap "Sign in with Google".
+
+6. FIELD APP → Setup → Quotations
+   Set the maximum discount % executives may give and the validity days → Save.
+
+7. TEST
+   Log in as an executive → open a doctor → 📄 New quotation → add a product → Save & PDF.
+   Inventory → Sell Order → Field quotations shows it.

@@ -260,6 +260,11 @@ header .brand,header nav{position:relative;z-index:1}
   nav a{padding:10px 11px;font-size:13.5px}
 }
 @media (max-width:370px){#meBox .adm{display:none}.brand h1{font-size:14px}.brand img{width:30px;height:28px}header{padding:10px 10px 0}}
+/* ===== quotations ===== */
+.qres{position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--cardbg,#fff);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(14,42,71,.18);max-height:300px;overflow:auto;margin-top:4px}
+body[data-theme="midnight"] .qres{background:#111827}
+.qhit{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}.qhit:hover{background:var(--green-soft)}
+.qtot td{padding:2px 0}
 </style>
 </head>
 <body>
@@ -275,6 +280,7 @@ header .brand,header nav{position:relative;z-index:1}
     <a href="#visits" data-v="visits">My Doctors</a>
     <a href="#followups" data-v="followups">Follow-ups<span class="n" id="fuN" hidden></span></a>
     <a href="#orders" data-v="orders">Orders</a>
+    <a href="#quotes" data-v="quotes">Quotations</a>
     <a href="#help" data-v="help">Help</a>
     <a href="#briefings" data-v="briefings">WhatsApp Briefings<span class="n" id="brN" hidden></span></a>
     <a href="#reports" data-v="reports">Reports &amp; Export</a>
@@ -427,7 +433,7 @@ $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.s
 
 /* ---------- routing ---------- */
 const ADMIN_VIEWS=["briefings","reports","activity","convert","setup"];
-function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
+function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","quotes","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- render ---------- */
@@ -467,6 +473,7 @@ function render(){
   else if(view==="activity")h+=vActivity();
   else if(view==="help")h+=vHelp();
   else if(view==="orders")h+=vOrders();
+  else if(view==="quotes")h+=vQuotes();
   else h+=vSetup();
   $("#main").innerHTML=h;
   bindView(); afterRender(); ensureExtraSubs();
@@ -593,6 +600,7 @@ function openDoctor(execId,docId){
     </div>
     ${canWrite&&db?`<button class="btn pri" id="addMu" style="width:100%;justify-content:center;padding:12px">+ Add meetup update</button>`:""}
     ${doctorOrdersHtml(d)}
+    ${doctorQuotesHtml(d)}
     ${transferHtml(e,d)}
     <span class="lbl">Meetup history (${hs.length})</span>
     ${hs.length?`<div class="hist">${hs.slice().reverse().map((v,i)=>`<div class="it">
@@ -607,7 +615,7 @@ function openDoctor(execId,docId){
   $("#ov").classList.add("on"); docOpen=true;
   $("#dx").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
   const am=$("#addMu"); if(am)am.onclick=()=>{docOpen=false;openForm(execId,docId)};
-  bindTransferForm(e,d,()=>openDoctor(e.id,d.id)); bindDoctorOrders(d);
+  bindTransferForm(e,d,()=>openDoctor(e.id,d.id)); bindDoctorOrders(d); bindDoctorQuotes(d);
   const dio=$("#diOpen"); if(dio)dio.onclick=()=>openDocInfo(e.id,d.id);
   const zs=$("#zSel"); if(zs)zs.onchange=async()=>{await setZone(d.id,zs.value);openDoctor(e.id,d.id)};
   const sb=$("#schB"); if(sb)sb.onclick=()=>{$("#schF").hidden=!$("#schF").hidden};
@@ -802,6 +810,7 @@ function vSetup(){
     <button class="btn sm" id="tpl">⬇ Download template</button></div>
     <p class="small" style="margin:8px 0 0">Have a raw hospital / doctor sheet instead? Use the <a href="#convert" style="color:var(--accent);font-weight:600">🔄 Data Converter</a>.</p>
     <div class="err" id="impErr" style="white-space:pre-line"></div></div>
+  ${quoteSetupHtml()}
   <div class="grid" style="margin-bottom:16px">
    <div class="card"><b>Add one executive</b>
     <div style="display:grid;gap:8px;margin-top:10px">
@@ -860,7 +869,7 @@ function bindView(){
   on("#xP","click",()=>meetupPdf(reportRows()));
   on("#imp","change",importFile);
   on("#sendAll","click",()=>openSendAll(briefCache,filt.brDate));
-  bindTransfers(); if(view==="activity")bindActivity(); if(view==="orders")bindOrders();
+  bindTransfers(); if(view==="activity")bindActivity(); if(view==="orders")bindOrders(); if(view==="quotes")bindQuotes(); if(view==="setup")bindQuoteSetup();
   on("#tpl","click",downloadTemplate);
   on("#rstOpen","click",openReset);
   on("#aGo","click",addOne);
@@ -1139,7 +1148,7 @@ let saving=false;
 async function saveMaster(msg){
   if(!db)return toast("Database unavailable");
   if(saving)return; saving=true;
-  try{await db.doc("config/master").set({executives:master.executives,...(master.theme?{theme:master.theme}:{}),updated:Date.now()});toast(msg||"Saved");fixMe()}
+  try{await db.doc("config/master").set({executives:master.executives,...(master.theme?{theme:master.theme}:{}),...(master.quote?{quote:master.quote}:{}),updated:Date.now()});toast(msg||"Saved");fixMe()}
   catch(e){toast(e.code==="invalid_argument"?"Only the owner can change the team list":"Couldn't save ("+e.code+")")}
   finally{saving=false;render()}
 }
@@ -1667,12 +1676,19 @@ function helpBody(){
     <li><b>Accept:</b> the doctor joins your list with all past meetups.</li>
     <li><b>Decline:</b> the doctor stays with the other executive, who sees that you declined.</li></ol>`)+
   s("5. Updating doctor details",`<p style="margin:0">Open a doctor → <b>✏️ Edit doctor info</b> to fill in or correct the phone, speciality, area, address, email, clinic timings, best time to visit and notes. Doctors with missing details show <b>⚠️ Info pending</b>; use the status filter <b>Info pending</b> in My Doctors to find them. To change a doctor's name or hospital, ask your admin.</p>`)+
-  s("6. Recording an order",`<p style="margin:0 0 6px">When you save a meetup as <b>Positive</b>, the order form opens. You can also open a doctor → <b>New order / quotation</b>, or <b>My Orders</b> → <b>+ New order</b>.</p><ol style="margin:0;padding-left:20px">
+  s("6. Recording an order",`<p style="margin:0 0 6px">When you save a meetup as <b>Positive</b>, the order form opens. You can also open a doctor → <b>💰 New order</b>, or <b>My Orders</b> → <b>+ New order</b>.</p><ol style="margin:0;padding-left:20px">
     <li>Enter the <b>order title</b>, <b>products</b> (quantity + unit price, total adds up) and the <b>doctor's estimated amount</b>.</li>
     <li>As the deal moves, open it in <b>My Orders</b> and tap the next stage: <b>Quotation sent → Quotation signed → Order / PO received → Delivered → Payment collected</b>.</li>
     <li>Fill what each stage asks: quotation no., signed date, PO number, delivery date, amount received.</li>
     <li>If the doctor drops it, tap <b>Lost</b> and choose why.</li></ol>
     <p style="margin:8px 0 0"><b>My Orders</b> shows your open pipeline, orders won, deliveries and payment pending.</p>`)+
+  s("7. Making a quotation",`<p style="margin:0 0 6px">Products and MRP come straight from the company inventory, so prices are always current.</p><ol style="margin:0;padding-left:20px">
+    <li>Open the doctor → <b>📄 New quotation</b> (or <b>Quotations</b> tab → <b>+ New quotation</b>).</li>
+    <li>Check the hospital name and address. Add GSTIN if the hospital has one.</li>
+    <li>Search a product by name or code and tap it to add. Set the quantity with <b>−</b> / <b>+</b>.</li>
+    <li>Add a hospital or surgeon discount if agreed (up to the limit set by the admin). <b>Add GST</b> is on by default.</li>
+    <li>Tap <b>Save &amp; PDF</b>. The quotation gets its number (e.g. DHH/QTN/DHH01/26-27/0001) and the PDF downloads. On a phone, open it and tap <b>📤 Share PDF</b> to send it on WhatsApp.</li></ol>
+    <p style="margin:8px 0 0">The doctor's order moves to <b>Quotation sent</b> automatically. When the hospital agrees, open the quotation and mark it <b>Accepted</b>.</p>`)+
   `</div>`;
 }
 function vHelp(){return `<h2>How to use this app</h2>`+helpBody()}
@@ -1905,7 +1921,7 @@ function exportOrders(){
 
 function doctorOrdersHtml(d){
   const os=orders.filter(o=>o.doctorId===d.id);
-  return `${canWrite&&db?`<button class="btn" id="ordNew" style="width:100%;justify-content:center;margin-top:10px">💰 New order / quotation</button>`:""}`+
+  return `${canWrite&&db?`<button class="btn" id="ordNew" style="width:100%;justify-content:center;margin-top:10px">💰 New order</button>`:""}`+
     (os.length?`<span class="lbl">Orders (${os.length})</span>`+os.map(o=>`<div class="card doc" data-dord="${esc(o._uid)}|${esc(o.id)}" style="padding:10px 12px;margin-bottom:6px"><div class="row"><b class="grow">${esc(o.title||"Order")}</b><b>${inr(oVal(o))}</b></div><div class="m" style="margin-top:4px">${stageChip(o.stage)}${o.paid?`<span>paid ${inr(o.paid)}</span>`:""}</div></div>`).join(""):"");
 }
 function bindDoctorOrders(d){
@@ -1923,6 +1939,7 @@ function infoMissing(d){const m=[];if(!String(d.phone||"").trim())m.push("phone"
 function ensureExtraSubs(){
   if(extraStarted||!db||!uid||!loggedIn())return; extraStarted=true;
   db.collection("docinfo").onSnapshot(s=>{const m={};s.docs.forEach(d=>m[d.id]=d.data());infoMap=m;render()},()=>{});
+  startQuoteSubs();
   watchOrders(uid); if(canAdmin)db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
 }
 function openDocInfo(execId,docId){
@@ -2206,6 +2223,347 @@ function confirmBox(text,yes,label){
   $("#ov").classList.add("on");
   $("#cn").onclick=()=>$("#ov").classList.remove("on");
   $("#cy").onclick=()=>{$("#ov").classList.remove("on");yes()};
+}
+
+/* =========================================================
+   QUOTATIONS – executives quote products from the inventory
+   Products: catalog/products (published live by the Implant Product Register, MRP only)
+   Quotations: fquotes/<EXEC>_<FY>_<SEQ>   number DHH/QTN/<EXEC>/<FY>/<SEQ>
+   PDF: quote-pdf.js (same format as the inventory quotation)
+   ========================================================= */
+let catalog=null, catCo=null, catAt="", quotes=[], qSubStarted=false, qForm=null, qLoaded=false;
+const Q_STATUS={open:"Open",accepted:"Accepted",lost:"Lost",cancelled:"Cancelled"};
+const Q_CLR={open:"#2563a8",accepted:"#1f9d6f",lost:"#d64545",cancelled:"#5f6f80"};
+function qCfg(){const q=master.quote||{};return {maxDisc:q.maxDisc==null?10:+q.maxDisc,validDays:+q.validDays||30}}
+function qChip(s){return `<span class="chip" style="background:${Q_CLR[s]||"#5f6f80"}1c;color:${Q_CLR[s]||"#5f6f80"}">${esc(Q_STATUS[s]||s)}</span>`}
+function r2q(v){return Math.round((+v+Number.EPSILON)*100)/100}
+function inr2(n){return "₹"+(+n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function startQuoteSubs(){
+  if(qSubStarted||!db||!uid||!loggedIn())return; qSubStarted=true;
+  const rer=()=>{if(view==="quotes"&&!qForm)render()};
+  db.doc("catalog/products").onSnapshot(s=>{const d=s.exists?s.data():null;catalog=(d&&d.list)||[];catAt=(d&&d.updatedAt)||"";rer()},()=>{catalog=[];rer()});
+  db.doc("catalog/company").onSnapshot(s=>{catCo=s.exists?s.data():null},()=>{});
+  const all=canAdmin||realAdmin;
+  const q=all?db.collection("fquotes"):db.collection("fquotes").where("exec","==",session);
+  q.onSnapshot(s=>{quotes=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));qLoaded=true;rer()},()=>{qLoaded=true;rer()});
+}
+function myQuotes(){return canAdmin?quotes:quotes.filter(q=>q.exec===session)}
+let qLib=null;
+function loadQuoteLib(){
+  if(window.HanQuote&&window.jspdf)return Promise.resolve(window.HanQuote);
+  if(qLib)return qLib;
+  const add=src=>new Promise((ok,no)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>no(new Error("Couldn't load "+src));document.head.appendChild(s)});
+  qLib=(window.HanQuote?Promise.resolve():add("quote-pdf.js")).then(()=>{if(!window.HanQuote)throw new Error("Quotation module missing");return window.HanQuote}).catch(e=>{qLib=null;throw e});
+  return qLib;
+}
+function qCompany(){
+  const c={...(catCo||{})}; delete c.logo; delete c.updatedAt; return c;
+}
+function qForPdf(q){const d=JSON.parse(JSON.stringify(q));d.company={...(d.company||{})};if(catCo&&catCo.logo)d.company.logo=catCo.logo;d.codeLabel="Product Code";return d}
+async function quotePdf(q,share){
+  try{
+    const H=await loadQuoteLib(); if(!window.jspdf)throw new Error("PDF library didn't load");
+    const pdf=H.buildPdf(qForPdf(q)); const name=q.no.replace(/\//g,"-")+".pdf";
+    const blob=new Blob([pdf.output("arraybuffer")],{type:"application/pdf"});
+    if(share&&navigator.canShare){const f=new File([blob],name,{type:"application/pdf"});
+      if(navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:q.no,text:`Quotation ${q.no} – ${q.customer?.name||""}`});return}catch(e){if(e&&e.name==="AbortError")return}}}
+    await save(name,blob);
+  }catch(e){toast("Couldn't make the PDF: "+(e.message||e))}
+}
+
+/* ---------- Quotations tab ---------- */
+function vQuotes(){
+  const all=myQuotes(); let list=all;
+  if(canAdmin&&filt.qExec&&filt.qExec!=="all")list=list.filter(q=>q.exec===filt.qExec);
+  const st=filt.qSt||"all"; const qq=(filt.qQ||"").toLowerCase();
+  const shown=list.filter(q=>(st==="all"||q.status===st)&&(!qq||[q.no,q.doctor,q.hospital,q.customer?.name,...(q.lines||[]).map(l=>l.desc)].join(" ").toLowerCase().includes(qq)));
+  const m=today().slice(0,7), sum=a=>a.reduce((x,q)=>x+(+q.totals?.grand||0),0);
+  const open=list.filter(q=>q.status==="open"), acc=list.filter(q=>q.status==="accepted");
+  let h=`<div class="stats">
+    <div class="stat"><b>${list.filter(q=>(q.date||"").slice(0,7)===m).length}</b><span>Quotations this month</span></div>
+    <div class="stat"><b>${inr(sum(open))}</b><span>Open · ${open.length}</span></div>
+    <div class="stat"><b>${inr(sum(acc))}</b><span>Accepted · ${acc.length}</span></div>
+    <div class="stat"><b>${catalog?catalog.length:"…"}</b><span>Products available</span></div></div>
+  <h2>${canAdmin?"All quotations":"My quotations"}</h2>`;
+  if(catalog&&!catalog.length)h+=`<div class="notice">The product list from the inventory isn't available yet. ${canAdmin?"Open the inventory (<b>/inventory</b>) once while signed in, and it publishes the list automatically.":"Ask the admin to open the inventory once to publish it."}</div>`;
+  h+=`<div class="row" style="margin-bottom:10px">
+    ${canAdmin?`<select id="qExec" style="max-width:230px"><option value="all">All executives</option>${master.executives.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select>`:""}
+    <input type="search" id="qQ" placeholder="Search no., doctor, hospital, product…" style="flex:1;min-width:180px" value="${esc(filt.qQ||"")}">
+    ${canAdmin?`<button class="btn sm" id="qXls">⬇ Excel</button>`:""}
+    ${canWrite&&db&&!canAdmin?`<button class="btn pri" id="qNew">+ New quotation</button>`:""}
+  </div>
+  <div class="seg" style="margin-bottom:14px">${[["all","All",list.length],...Object.keys(Q_STATUS).map(k=>[k,Q_STATUS[k],list.filter(q=>q.status===k).length])].map(([k,l,n])=>`<button type="button" data-qst="${k}" class="${st===k?"on":""}">${l} <span style="opacity:.7">(${n})</span></button>`).join("")}</div>`;
+  if(!qLoaded)return h+`<div class="grid"><div class="skel"></div><div class="skel"></div></div>`;
+  if(!shown.length)return h+`<div class="empty">No quotations here yet.${!canAdmin?"<br><br>Open a doctor → <b>📄 New quotation</b>, or tap <b>+ New quotation</b>.":""}</div>`;
+  return h+`<div class="grid">`+shown.map(q=>`<div class="card doc" data-qid="${esc(q.id)}">
+    <div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(q.doctor||q.customer?.name)}</div><div class="h">${esc(q.customer?.name||q.hospital||"")}</div></div>
+    <div style="text-align:right"><b style="font-size:17px;color:var(--navy)">${inr(q.totals?.grand)}</b><div class="small muted">${(q.lines||[]).length} product${(q.lines||[]).length===1?"":"s"}</div></div></div>
+    ${canAdmin?`<div class="small" style="margin-top:4px;color:var(--navy)">👤 ${esc(q.execName||q.exec)}</div>`:""}
+    <div class="m">${qChip(q.status)}<span class="mono">${esc(q.no)}</span><span>${esc(fmtDs(q.date))}</span>${q.status==="open"&&q.validUntil&&q.validUntil<today()?`<span class="chip due">Expired</span>`:""}</div></div>`).join("")+`</div>`;
+}
+function bindQuotes(){
+  const qe=$("#qExec"); if(qe){qe.value=filt.qExec||"all";qe.onchange=()=>{filt.qExec=qe.value;render()}}
+  const qq=$("#qQ"); if(qq)qq.oninput=()=>{filt.qQ=qq.value;clearTimeout(bindQuotes._t);bindQuotes._t=setTimeout(()=>{render();const x=$("#qQ");if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},250)};
+  document.querySelectorAll("[data-qst]").forEach(b=>b.onclick=()=>{filt.qSt=b.dataset.qst;render()});
+  document.querySelectorAll("[data-qid]").forEach(c=>c.onclick=()=>openQuote(c.dataset.qid));
+  const n=$("#qNew"); if(n)n.onclick=()=>pickDoctorFor("New quotation · choose doctor",id=>openQuoteForm(null,id));
+  const x=$("#qXls"); if(x)x.onclick=exportQuotes;
+}
+function pickDoctorFor(title,cb){
+  const rows=canAdmin?allDoctorRows():myRows();
+  $("#sheet").innerHTML=`<div class="sheet-h"><div style="font-weight:700;font-size:16px">${esc(title)}</div><button class="x" id="pdX">×</button></div>
+  <div class="sheet-b"><input type="search" id="pdQ" placeholder="Search doctor or hospital…"><div id="pdL" style="margin-top:10px"></div></div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#pdX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
+  const draw=()=>{const q=$("#pdQ").value.toLowerCase();
+    $("#pdL").innerHTML=rows.filter(r=>!q||(r.doc.doctor+" "+r.doc.hospital).toLowerCase().includes(q)).slice(0,60).map(r=>`<div class="card doc" data-pd="${esc(r.doc.id)}" style="margin-bottom:8px;padding:10px 12px"><b>${esc(r.doc.doctor)}</b><div class="small muted">${esc(r.doc.hospital)}${canAdmin?" · "+esc(r.exec.name):""}</div></div>`).join("")||`<div class="empty">No doctors.</div>`;
+    document.querySelectorAll("[data-pd]").forEach(c=>c.onclick=()=>cb(c.dataset.pd))};
+  $("#pdQ").oninput=draw; draw();
+}
+
+/* ---------- one quotation ---------- */
+function openQuote(id){
+  const q=quotes.find(x=>x.id===id); if(!q)return;
+  const mine=q.exec===session, canEd=canWrite&&db&&(mine||canAdmin);
+  const t=q.totals||{};
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${esc(q.no)}</div><div class="small" style="color:#b9cbdd">${esc(q.doctor||"")} · ${esc(q.customer?.name||"")}</div></div><button class="x" id="qvX">×</button></div>
+  <div class="sheet-b">
+    <div class="auto">
+      <div>Date<b>${esc(fmtD(q.date))}</b></div>
+      <div>Valid until<b>${esc(fmtD(q.validUntil))}</b></div>
+      <div>Status<b>${qChip(q.status)}</b></div>
+      <div>Executive<b>${esc(q.execName||q.exec)}</b></div>
+    </div>
+    <span class="lbl">Products (${(q.lines||[]).length})</span>
+    <div class="card" style="padding:4px 12px;margin-bottom:12px">${(q.lines||[]).map((l,i)=>`<div style="padding:9px 0;${i?"border-top:1px solid var(--line)":""}">
+      <b style="font-size:14px">${esc(l.desc)}</b>
+      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × MRP ${inr2(l.mrp)}</span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
+    <div class="qtot">${qTotalsHtml(t,q.opts||{})}</div>
+    ${q.notes?`<p class="small"><b>Note:</b> ${esc(q.notes)}</p>`:""}
+    <div class="row" style="margin-top:14px;gap:8px">
+      <button class="btn pri" id="qvPdf">⬇ Download PDF</button>
+      ${navigator.canShare?`<button class="btn" id="qvShare">📤 Share PDF</button>`:""}
+      ${canEd&&q.status==="open"?`<button class="btn" id="qvEdit">✏️ Edit</button>`:""}
+    </div>
+    ${canEd?`<span class="lbl">Update status</span><div class="seg" id="qvSt">${Object.keys(Q_STATUS).map(k=>`<button type="button" data-s="${k}" class="${q.status===k?"on":""}">${Q_STATUS[k]}</button>`).join("")}</div>`:""}
+    ${q.orderNote?`<p class="small muted" style="margin-top:10px">${esc(q.orderNote)}</p>`:""}
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#qvX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
+  $("#qvPdf").onclick=()=>quotePdf(q,false);
+  const sh=$("#qvShare"); if(sh)sh.onclick=()=>quotePdf(q,true);
+  const ed=$("#qvEdit"); if(ed)ed.onclick=()=>openQuoteForm(q,q.doctorId);
+  document.querySelectorAll("#qvSt button").forEach(b=>b.onclick=async()=>{
+    const s=b.dataset.s; if(s===q.status)return;
+    try{await db.doc("fquotes/"+q.id).set({...stripQ(q),status:s,statusAt:Date.now(),statusBy:actor().id});
+      logAct("order",`Quotation ${q.no} (${q.doctor}) marked ${Q_STATUS[s]}`);toast("Quotation marked "+Q_STATUS[s]);
+      if(s==="accepted")celebrate(true);
+      openQuote(q.id);
+    }catch(x){toast("Couldn't update ("+(x.code||x.message)+")")}
+  });
+}
+function stripQ(q){const o={...q};delete o.id;return o}
+function qTotalsHtml(t,o){
+  const r=[[`Gross value (MRP × qty)`,inr2(t.amount)]];
+  if(o.hospOn)r.push([`Less: Hospital discount @ ${+o.hospPct}%`,"− "+inr2(t.hospDisc)]);
+  if(o.surgOn)r.push([`Less: Surgeon discount @ ${+o.surgPct}%`,"− "+inr2(t.surgDisc)]);
+  const g=r2q((t.cgst||0)+(t.sgst||0)+(t.igst||0)); if(g)r.push(["Add: GST",inr2(g)]);
+  if(t.roundOff)r.push(["Round off",inr2(t.roundOff)]);
+  return `<table style="width:100%;font-size:14px">${r.map(([a,b])=>`<tr><td class="muted">${a}</td><td style="text-align:right">${b}</td></tr>`).join("")}
+    <tr><td style="padding-top:6px"><b>Grand total${g?" (incl. GST)":""}</b></td><td style="text-align:right;padding-top:6px"><b style="font-size:18px;color:var(--navy)">${inr2(t.grand)}</b></td></tr></table>`;
+}
+
+/* ---------- quotation form ---------- */
+async function openQuoteForm(q,docId){
+  const row=allDoctorRows().find(r=>r.doc.id===(q?q.doctorId:docId)); if(!q&&!row)return toast("Doctor not found");
+  const e=q?(execById(q.exec)||{id:q.exec,name:q.execName}):row.exec, d=q?{id:q.doctorId,doctor:q.doctor,hospital:q.hospital,area:q.area,...(row?row.doc:{})}:row.doc;
+  const cfg=qCfg();
+  const vu=addDays(today(),cfg.validDays);
+  qForm={q,e,d,lines:q?JSON.parse(JSON.stringify(q.lines)):[],opts:q?{...q.opts}:{hospOn:false,hospPct:"",surgOn:false,surgPct:""},gst:q?!("gstOn" in (q.opts||{})&&!q.opts.gstOn):true,pick:""};
+  const c=q?q.customer:{name:d.hospital||"",address:[d.address,d.area].filter(Boolean).join("\n")||"",gstin:"",phone:d.phone||""};
+  const v=x=>esc(x==null?"":x);
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${q?"Edit "+esc(q.no):"New quotation"} · ${esc(d.doctor)}</div><div class="small" style="color:#b9cbdd">${esc(d.hospital)}${canAdmin?" · "+esc(e.name):""}</div></div><button class="x" id="qfX">×</button></div>
+  <div class="sheet-b">
+    ${catalog===null?`<div class="notice info">Loading the product list…</div>`:!catalog.length?`<div class="notice">The product list from the inventory isn't available yet. Ask the admin.</div>`:""}
+    <span class="lbl" style="margin-top:0">Quotation to</span>
+    <input type="text" id="qfName" value="${v(c.name)}" placeholder="Hospital / clinic name">
+    <textarea id="qfAddr" style="min-height:58px;margin-top:6px" placeholder="Address">${v(c.address)}</textarea>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:6px">
+      <input type="tel" id="qfPh" value="${v(c.phone)}" placeholder="Phone">
+      <input type="text" id="qfGst" value="${v(c.gstin)}" placeholder="GSTIN (optional)" style="text-transform:uppercase">
+      <input type="text" id="qfRef" value="${v(q?q.yourRef:"")}" placeholder="Enquiry / ref. no. (optional)">
+    </div>
+    <span class="lbl">Products</span>
+    <div style="position:relative"><input type="search" id="qfPick" placeholder="🔍 Search product name or code to add…" autocomplete="off">
+    <div id="qfRes" class="qres" hidden></div></div>
+    <div id="qfLines" style="margin-top:8px"></div>
+    <span class="lbl">Discount <span class="muted" style="text-transform:none;letter-spacing:0">(total up to ${cfg.maxDisc}%)</span></span>
+    <div style="display:grid;grid-template-columns:auto 90px;gap:8px 12px;align-items:center;max-width:300px">
+      <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="qfHo" ${qForm.opts.hospOn?"checked":""}> Hospital discount %</label>
+      <input type="tel" inputmode="decimal" id="qfHp" value="${v(qForm.opts.hospPct)}" placeholder="0">
+      <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="qfSo" ${qForm.opts.surgOn?"checked":""}> Surgeon discount %</label>
+      <input type="tel" inputmode="decimal" id="qfSp" value="${v(qForm.opts.surgPct)}" placeholder="0">
+    </div>
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="qfGstOn" ${qForm.gst?"checked":""}> Add GST (each product's own rate)</label>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:6px">
+      <div><span class="lbl">Quotation date</span><input type="date" id="qfDate" value="${v(q?q.date:today())}"></div>
+      <div><span class="lbl">Valid until</span><input type="date" id="qfValid" value="${v(q?q.validUntil:vu)}"></div>
+    </div>
+    <span class="lbl">Note on the quotation (optional)</span><input type="text" id="qfNotes" value="${v(q?q.notes:"")}" placeholder="e.g. Includes installation and training">
+    <div class="card qtot" id="qfTot" style="margin-top:12px;background:#f6f9fb"></div>
+    ${!q?`<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="qfOrd" checked> Also update this doctor's order (stage → Quotation sent)</label>`:""}
+    <div class="err" id="qfErr"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px"><button class="btn" id="qfC">Cancel</button><button class="btn" id="qfSave">Save</button><button class="btn pri" id="qfGo">Save &amp; PDF</button></div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  const close=()=>{$("#ov").classList.remove("on");docOpen=false;qForm=null};
+  $("#qfX").onclick=$("#qfC").onclick=close;
+  const H=await loadQuoteLib().catch(()=>null);
+  const calc=()=>{
+    const o=qOpts();
+    if(!H)return {t:null,o};
+    const lines=qForm.lines.map(l=>({...l,...H.calcLine(l,qIntra(),o)}));
+    return {lines,t:H.calcDoc(lines,qIntra(),"QTN",o),o};
+  };
+  const drawTot=()=>{const r=calc();$("#qfTot").innerHTML=r.t?qTotalsHtml(r.t,r.o):`<span class="muted small">Add products to see the total.</span>`};
+  const drawLines=()=>{
+    $("#qfLines").innerHTML=qForm.lines.length?qForm.lines.map((l,i)=>`<div class="card" style="padding:10px 12px;margin-bottom:6px">
+      <div class="row" style="align-items:flex-start;gap:8px"><div class="grow"><b style="font-size:14px">${esc(l.desc)}</b><div class="small muted"><span class="mono">${esc(l.mat)}</span> · MRP ${inr2(l.mrp)}${l.gstRate?` · GST ${l.gstRate}%`:""}</div></div>
+      <button type="button" class="btn sm" data-qx="${i}" title="Remove">✕</button></div>
+      <div class="row" style="gap:8px;margin-top:6px"><span class="small muted">Qty</span>
+      <button type="button" class="btn sm" data-qm="${i}">−</button><input type="tel" inputmode="numeric" data-qq="${i}" value="${esc(l.qty)}" style="max-width:64px;text-align:center"><button type="button" class="btn sm" data-qp="${i}">+</button>
+      <span class="grow"></span><b>${inr2(r2q(l.qty*l.mrp))}</b></div></div>`).join(""):`<div class="small muted">No products yet — search above to add.</div>`;
+    document.querySelectorAll("[data-qx]").forEach(b=>b.onclick=()=>{qForm.lines.splice(+b.dataset.qx,1);drawLines()});
+    document.querySelectorAll("[data-qm]").forEach(b=>b.onclick=()=>{const l=qForm.lines[+b.dataset.qm];l.qty=Math.max(1,(+l.qty||1)-1);drawLines()});
+    document.querySelectorAll("[data-qp]").forEach(b=>b.onclick=()=>{const l=qForm.lines[+b.dataset.qp];l.qty=(+l.qty||0)+1;drawLines()});
+    document.querySelectorAll("[data-qq]").forEach(x=>x.oninput=()=>{qForm.lines[+x.dataset.qq].qty=+x.value.replace(/\D/g,"")||0;drawTot()});
+    drawTot();
+  };
+  const pick=$("#qfPick"), res=$("#qfRes");
+  const drawRes=()=>{
+    const s=pick.value.trim().toLowerCase(); if(!s||!catalog){res.hidden=true;return}
+    const words=s.split(/\s+/);
+    const hits=catalog.filter(p=>{const t=(p.desc+" "+p.mat+" "+(p.div||"")).toLowerCase();return words.every(w=>t.includes(w))}).slice(0,40);
+    res.hidden=false;
+    res.innerHTML=hits.length?hits.map((p,i)=>`<div class="qhit" data-qh="${esc(p.mat)}"><b>${esc(p.desc)}</b><div class="small muted"><span class="mono">${esc(p.mat)}</span>${p.div?" · "+esc(p.div):""} · <b style="color:var(--navy)">MRP ${inr2(p.mrp)}</b></div></div>`).join(""):`<div class="small muted" style="padding:10px">No product matches “${esc(s)}”.</div>`;
+    res.querySelectorAll("[data-qh]").forEach(x=>x.onclick=()=>{
+      const p=catalog.find(z=>z.mat===x.dataset.qh); if(!p)return;
+      const ex=qForm.lines.find(l=>l.mat===p.mat); if(ex)ex.qty=(+ex.qty||0)+1;
+      else qForm.lines.push({mat:p.mat,pid:p.mat,desc:p.desc,hsn:p.hsn||"",uom:p.uom||"",qty:1,mrp:+p.mrp||0,rate:+p.mrp||0,discPct:0,gstRate:+p.gst||0,remarks:""});
+      pick.value="";res.hidden=true;drawLines();toast("Added: "+p.desc.slice(0,40));
+    });
+  };
+  pick.oninput=drawRes; pick.onfocus=drawRes;
+  ["qfHo","qfHp","qfSo","qfSp","qfGstOn","qfGst"].forEach(id=>{const x=$("#"+id);x.oninput=x.onchange=()=>{if(id==="qfHp"&&x.value)$("#qfHo").checked=true;if(id==="qfSp"&&x.value)$("#qfSo").checked=true;drawTot()}});
+  drawLines();
+  $("#qfSave").onclick=()=>saveQuote(false);
+  $("#qfGo").onclick=()=>saveQuote(true);
+}
+function qOpts(){
+  const ho=$("#qfHo").checked, so=$("#qfSo").checked;
+  const o={hospOn:ho,hospPct:ho?(+$("#qfHp").value.replace(/[^\d.]/g,"")||0):"",surgOn:so,surgPct:so?(+$("#qfSp").value.replace(/[^\d.]/g,"")||0):""};
+  if(!$("#qfGstOn").checked){o.gstOn=false;o.gstPct=""}
+  return o;
+}
+function qIntra(){const g=($("#qfGst")?.value||"").trim();const s=g?g.slice(0,2):"33";return !s||s==="33"}
+function discEff(o){const h=o.hospOn?(+o.hospPct||0):0,s=o.surgOn?(+o.surgPct||0):0;return r2q(100-(100-h)*(100-s)/100)}
+async function saveQuote(withPdf){
+  const F=qForm, err=$("#qfErr"); err.textContent="";
+  let H; try{H=await loadQuoteLib()}catch(x){return err.textContent="Couldn't load the quotation module. Check your internet and try again."}
+  const name=$("#qfName").value.trim(); if(!name)return err.textContent="Enter the hospital / clinic name.";
+  if(!F.lines.length)return err.textContent="Add at least one product.";
+  if(F.lines.some(l=>!(+l.qty>0)))return err.textContent="Every product needs a quantity of at least 1.";
+  const o=qOpts();
+  if(o.hospOn&&!(o.hospPct>0))return err.textContent="Hospital discount is ticked: enter the %, or untick it.";
+  if(o.surgOn&&!(o.surgPct>0))return err.textContent="Surgeon discount is ticked: enter the %, or untick it.";
+  const de=discEff(o), cap=qCfg().maxDisc;
+  if(!canAdmin&&de>cap+0.001)return err.textContent=`Total discount is ${de}%. The most you can give is ${cap}%. Ask the admin for more.`;
+  const gst=$("#qfGst").value.trim().toUpperCase();
+  if(gst&&!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst))return err.textContent="The GSTIN doesn't look right (15 characters, e.g. 33AAICD8859P1ZS). Fix it or leave it blank.";
+  const date=$("#qfDate").value||today(), valid=$("#qfValid").value||addDays(date,qCfg().validDays);
+  if(valid<date)return err.textContent="'Valid until' is before the quotation date.";
+  const intra=qIntra(), lines=F.lines.map(l=>({...l,qty:+l.qty,...H.calcLine({...l,qty:+l.qty},intra,o)})), totals=H.calcDoc(lines,intra,"QTN",o);
+  const sc=gst?gst.slice(0,2):"33";
+  const cust={name,address:$("#qfAddr").value.trim(),gstin:gst,stateCode:sc,stateName:H.STATES[sc]||"",dl:"",phone:$("#qfPh").value.trim()};
+  const E=F.e.id, fy=H.fyOf(date);
+  const base={type:"QTN",exec:E,execName:F.e.name||"",doctorId:F.d.id,doctor:F.d.doctor||"",hospital:F.d.hospital||"",area:F.d.area||"",date,validUntil:valid,
+    yourRef:$("#qfRef").value.trim(),preparedBy:`${F.e.name||""} (${E})`,customer:cust,intra,extra:F.d.doctor?[{label:"Kind Attn.",value:F.d.doctor}]:[],
+    notes:$("#qfNotes").value.trim(),lines,totals,opts:o,discEff:de,company:qCompany(),updatedAt:Date.now()};
+  const b1=$("#qfGo"),b2=$("#qfSave"); b1.disabled=b2.disabled=true; (withPdf?b1:b2).textContent="Saving…";
+  try{
+    let rec;
+    if(F.q){rec={...stripQ(F.q),...base,no:F.q.no,fy:F.q.fy,seq:F.q.seq,status:F.q.status,createdAt:F.q.createdAt};await db.doc("fquotes/"+F.q.id).set(rec);rec.id=F.q.id}
+    else{
+      let seq=quotes.filter(x=>x.exec===E&&x.fy===fy).reduce((m,x)=>Math.max(m,+x.seq||0),0)+1, id;
+      for(let k=0;k<30;k++){id=`${E}_${fy}_${String(seq).padStart(4,"0")}`;const s=await db.doc("fquotes/"+id).get();if(!s.exists)break;seq++}
+      const no=`DHH/QTN/${E}/${fy}/${String(seq).padStart(4,"0")}`;
+      rec={...base,no,fy,seq,status:"open",createdAt:Date.now(),createdBy:actor().id};
+      if($("#qfOrd")?.checked){try{rec.orderNote=await linkQuoteToOrder(rec)}catch(x){rec.orderNote="Order not updated: "+(x.message||x.code)}}
+      await db.doc("fquotes/"+id).set(rec); rec.id=id;
+      if(!quotes.some(x=>x.id===id))quotes=[rec,...quotes];
+    }
+    logAct("order",`Quotation ${rec.no} – ${rec.doctor} (${rec.customer.name}) – ${inr(totals.grand)}`);
+    $("#ov").classList.remove("on");docOpen=false;qForm=null;
+    toast((F.q?"Quotation updated ":"Quotation saved ")+rec.no+" ✓");
+    if(withPdf)await quotePdf(rec,false);
+    if(view!=="quotes")location.hash="quotes"; else render();
+  }catch(x){b1.disabled=b2.disabled=false;b1.textContent="Save & PDF";b2.textContent="Save";err.textContent=/invalid_argument|permission/i.test(x.code||x.message||"")?"You don't have permission to save this quotation (check the discount limit).":"Couldn't save ("+(x.code||x.message)+")"}
+}
+async function linkQuoteToOrder(q){
+  const open=orders.find(o=>o.doctorId===q.doctorId&&OPEN.has(o.stage));
+  const items=q.lines.map(l=>({name:l.desc,qty:l.qty,price:r2q(l.total/(l.qty||1))}));
+  const a=actor();
+  const patch={stage:"quote",quoteNo:q.no,quoteDate:q.date,quoteAmount:q.totals.grand,items,updated:Date.now()};
+  if(open){
+    const o={...open}; delete o.id; delete o._uid;
+    const hist=[...(o.history||[]),...(o.stage!=="quote"?[{stage:"quote",at:Date.now(),by:a.id,byName:a.name}]:[])];
+    await db.doc("orders/"+open._uid+"/o/"+open.id).set({...o,...patch,title:o.title||q.lines.map(l=>`${l.qty} × ${l.desc}`).join(", ").slice(0,140),history:hist});
+    return `Order "${o.title||o.doctor}" moved to Quotation sent.`;
+  }
+  const folder=(canAdmin&&(accounts.find(x=>x.execId===q.exec)||{}).uid)||uid;
+  await db.doc("orders/"+folder).set({execId:folder===uid&&canAdmin?"ADMIN":q.exec,updated:Date.now()});
+  await db.collection("orders/"+folder+"/o").add({execId:q.exec,execName:q.execName,doctorId:q.doctorId,doctor:q.doctor,hospital:q.hospital,area:q.area||"",
+    title:q.lines.map(l=>`${l.qty} × ${l.desc}`).join(", ").slice(0,140),estAmount:0,quoteNo:"",quoteDate:"",signedDate:"",poNo:"",poDate:"",finalAmount:0,expDelivery:"",deliveredDate:"",paid:0,payTerms:"",lostWhy:"",
+    notes:"Created from quotation "+q.no,...patch,created:Date.now(),history:[{stage:"quote",at:Date.now(),by:a.id,byName:a.name}]});
+  return "New order created at stage Quotation sent.";
+}
+function exportQuotes(){
+  let list=myQuotes(); if(filt.qExec&&filt.qExec!=="all")list=list.filter(q=>q.exec===filt.qExec);
+  if(!list.length)return toast("No quotations to export");
+  if(!window.XLSX)return toast("Excel library didn't load");
+  const rows=[];
+  for(const q of list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)))for(const l of (q.lines||[]))rows.push({"Quotation no.":q.no,"Date":q.date,"Valid until":q.validUntil,"Status":Q_STATUS[q.status]||q.status,
+    "Executive":q.execName,"Executive ID":q.exec,"Doctor":q.doctor,"Hospital":q.customer?.name||q.hospital,"Product code":l.mat,"Product":l.desc,"Qty":l.qty,"MRP (₹)":l.mrp,
+    "Hospital disc %":q.opts?.hospOn?q.opts.hospPct:"","Surgeon disc %":q.opts?.surgOn?q.opts.surgPct:"","Line total incl. GST (₹)":l.total,"Quotation grand total (₹)":q.totals?.grand});
+  const wb=XLSX.utils.book_new(), ws=XLSX.utils.json_to_sheet(rows);
+  ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.max(10,Math.min(42,k.length+4))}));
+  XLSX.utils.book_append_sheet(wb,ws,"Quotations");
+  save(`HAN_Quotations_${today()}.xlsx`,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
+}
+/* doctor page: quotations for this doctor */
+function doctorQuotesHtml(d){
+  const qs=quotes.filter(q=>q.doctorId===d.id);
+  return `${canWrite&&db&&!canAdmin?`<button class="btn" id="qtNew" style="width:100%;justify-content:center;margin-top:10px">📄 New quotation</button>`:""}`+
+    (qs.length?`<span class="lbl">Quotations (${qs.length})</span>`+qs.map(q=>`<div class="card doc" data-dq="${esc(q.id)}" style="padding:10px 12px;margin-bottom:6px"><div class="row"><b class="grow mono" style="font-size:13px">${esc(q.no)}</b><b>${inr(q.totals?.grand)}</b></div><div class="m" style="margin-top:4px">${qChip(q.status)}<span>${esc(fmtDs(q.date))}</span><span>${(q.lines||[]).length} product${(q.lines||[]).length===1?"":"s"}</span></div></div>`).join(""):"");
+}
+function bindDoctorQuotes(d){
+  const n=$("#qtNew"); if(n)n.onclick=()=>openQuoteForm(null,d.id);
+  document.querySelectorAll("[data-dq]").forEach(c=>c.onclick=()=>openQuote(c.dataset.dq));
+}
+/* Setup card */
+function quoteSetupHtml(){
+  const c=qCfg();
+  return `<div class="card" style="margin-bottom:16px"><b>Quotations</b>
+    <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list (MRP only — purchase rates are never shared). ${catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
+    <div class="row"><label class="small">Max total discount an executive can give (%) <input type="tel" inputmode="decimal" id="qcMax" value="${esc(c.maxDisc)}" style="max-width:80px"></label>
+    <label class="small">Quotation valid for (days) <input type="tel" inputmode="numeric" id="qcDays" value="${esc(c.validDays)}" style="max-width:80px"></label>
+    <button class="btn sm pri" id="qcSave">Save</button></div></div>`;
+}
+function bindQuoteSetup(){
+  const b=$("#qcSave"); if(!b)return;
+  b.onclick=async()=>{const m=+$("#qcMax").value.replace(/[^\d.]/g,""), d=+$("#qcDays").value.replace(/\D/g,"");
+    if(!(m>=0&&m<=100))return toast("Discount must be 0–100%"); if(!(d>=1&&d<=365))return toast("Validity must be 1–365 days");
+    master={...master,quote:{maxDisc:m,validDays:d}}; await saveMaster("Quotation settings saved"); logAct("admin",`Quotation settings: max discount ${m}%, valid ${d} days`)};
 }
 
 </script>
