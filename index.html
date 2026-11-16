@@ -1686,7 +1686,7 @@ function helpBody(){
     <li>Open the doctor → <b>📄 New quotation</b> (or <b>Quotations</b> tab → <b>+ New quotation</b>).</li>
     <li>Check the hospital name and address. Add GSTIN if the hospital has one.</li>
     <li>Search a product by name or code and tap it to add. Set the quantity with <b>−</b> / <b>+</b>.</li>
-    <li>Add a hospital or surgeon discount if agreed (up to the limit set by the admin). <b>Add GST</b> is on by default.</li>
+    <li>Add a hospital or surgeon discount if agreed. <b>Add GST</b> is on by default.</li>
     <li>Tap <b>Save &amp; PDF</b>. The quotation gets its number (e.g. DHH/QTN/DHH01/26-27/0001) and the PDF downloads. On a phone, open it and tap <b>📤 Share PDF</b> to send it on WhatsApp.</li></ol>
     <p style="margin:8px 0 0">The doctor's order moves to <b>Quotation sent</b> automatically. When the hospital agrees, open the quotation and mark it <b>Accepted</b>.</p>`)+
   `</div>`;
@@ -2403,7 +2403,7 @@ async function openQuoteForm(q,docId){
     <div style="position:relative"><input type="search" id="qfPick" placeholder="🔍 Search product name or code to add…" autocomplete="off">
     <div id="qfRes" class="qres" hidden></div></div>
     <div id="qfLines" style="margin-top:8px"></div>
-    <span class="lbl">Discount <span class="muted" style="text-transform:none;letter-spacing:0">(total up to ${cfg.maxDisc}%)</span></span>
+    <span class="lbl">Discount</span>
     <div style="display:grid;grid-template-columns:auto 90px;gap:8px 12px;align-items:center;max-width:300px">
       <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="qfHo" ${qForm.opts.hospOn?"checked":""}> Hospital discount %</label>
       <input type="tel" inputmode="decimal" id="qfHp" value="${v(qForm.opts.hospPct)}" placeholder="0">
@@ -2416,7 +2416,7 @@ async function openQuoteForm(q,docId){
       <div><span class="lbl">Valid until</span><input type="date" id="qfValid" value="${v(q?q.validUntil:vu)}"></div>
     </div>
     <span class="lbl">Note on the quotation (optional)</span><input type="text" id="qfNotes" value="${v(q?q.notes:"")}" placeholder="e.g. Includes installation and training">
-    <div class="card qtot" id="qfTot" style="margin-top:12px;background:#f6f9fb"></div>
+    <div class="card qtot" id="qfTot" style="margin-top:12px"></div>
     ${!q?`<label class="small" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="qfOrd" checked> Also update this doctor's order (stage → Quotation sent)</label>`:""}
     <div class="err" id="qfErr"></div>
     <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px"><button class="btn" id="qfC">Cancel</button><button class="btn" id="qfSave">Save</button><button class="btn pri" id="qfGo">Save &amp; PDF</button></div>
@@ -2482,8 +2482,8 @@ async function saveQuote(withPdf){
   const o=qOpts();
   if(o.hospOn&&!(o.hospPct>0))return err.textContent="Hospital discount is ticked: enter the %, or untick it.";
   if(o.surgOn&&!(o.surgPct>0))return err.textContent="Surgeon discount is ticked: enter the %, or untick it.";
-  const de=discEff(o), cap=qCfg().maxDisc;
-  if(!canAdmin&&de>cap+0.001)return err.textContent=`Total discount is ${de}%. The most you can give is ${cap}%. Ask the admin for more.`;
+  const de=discEff(o);
+  if(de>=100)return err.textContent="The discount can't be 100% or more.";
   const gst=$("#qfGst").value.trim().toUpperCase();
   if(gst&&!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst))return err.textContent="The GSTIN doesn't look right (15 characters, e.g. 33AAICD8859P1ZS). Fix it or leave it blank.";
   const date=$("#qfDate").value||today(), valid=$("#qfValid").value||addDays(date,qCfg().validDays);
@@ -2513,7 +2513,7 @@ async function saveQuote(withPdf){
     toast((F.q?"Quotation updated ":"Quotation saved ")+rec.no+" ✓");
     if(withPdf)await quotePdf(rec,false);
     if(view!=="quotes")location.hash="quotes"; else render();
-  }catch(x){b1.disabled=b2.disabled=false;b1.textContent="Save & PDF";b2.textContent="Save";err.textContent=/invalid_argument|permission/i.test(x.code||x.message||"")?"You don't have permission to save this quotation (check the discount limit).":"Couldn't save ("+(x.code||x.message)+")"}
+  }catch(x){b1.disabled=b2.disabled=false;b1.textContent="Save & PDF";b2.textContent="Save";err.textContent=/invalid_argument|permission/i.test(x.code||x.message||"")?"You don't have permission to save this quotation. Ask the admin to update the Firestore rules.":"Couldn't save ("+(x.code||x.message)+")"}
 }
 async function linkQuoteToOrder(q){
   const open=orders.find(o=>o.doctorId===q.doctorId&&OPEN.has(o.stage));
@@ -2561,15 +2561,14 @@ function quoteSetupHtml(){
   const c=qCfg();
   return `<div class="card" style="margin-bottom:16px"><b>Quotations</b>
     <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list (MRP only — purchase rates are never shared). ${catalog&&!catalog.length?`<span style="color:var(--red)">${catNote()}</span>`:catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
-    <div class="row"><label class="small">Max total discount an executive can give (%) <input type="tel" inputmode="decimal" id="qcMax" value="${esc(c.maxDisc)}" style="max-width:80px"></label>
-    <label class="small">Quotation valid for (days) <input type="tel" inputmode="numeric" id="qcDays" value="${esc(c.validDays)}" style="max-width:80px"></label>
+    <div class="row"><label class="small">Quotation valid for (days) <input type="tel" inputmode="numeric" id="qcDays" value="${esc(c.validDays)}" style="max-width:80px"></label>
     <button class="btn sm pri" id="qcSave">Save</button></div></div>`;
 }
 function bindQuoteSetup(){
   const b=$("#qcSave"); if(!b)return;
-  b.onclick=async()=>{const m=+$("#qcMax").value.replace(/[^\d.]/g,""), d=+$("#qcDays").value.replace(/\D/g,"");
-    if(!(m>=0&&m<=100))return toast("Discount must be 0–100%"); if(!(d>=1&&d<=365))return toast("Validity must be 1–365 days");
-    master={...master,quote:{maxDisc:m,validDays:d}}; await saveMaster("Quotation settings saved"); logAct("admin",`Quotation settings: max discount ${m}%, valid ${d} days`)};
+  b.onclick=async()=>{const d=+$("#qcDays").value.replace(/\D/g,"");
+    if(!(d>=1&&d<=365))return toast("Validity must be 1–365 days");
+    master={...master,quote:{...(master.quote||{}),validDays:d}}; await saveMaster("Quotation settings saved"); logAct("admin",`Quotation validity set to ${d} days`)};
 }
 
 </script>
