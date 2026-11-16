@@ -215,6 +215,7 @@ main.anim tbody tr{animation:fadeIn .4s both}
   <nav id="nav">
     <a href="#visits" data-v="visits">My Doctors</a>
     <a href="#followups" data-v="followups">Follow-ups<span class="n" id="fuN" hidden></span></a>
+    <a href="#orders" data-v="orders">Orders</a>
     <a href="#help" data-v="help">Help</a>
     <a href="#briefings" data-v="briefings">WhatsApp Briefings<span class="n" id="brN" hidden></span></a>
     <a href="#reports" data-v="reports">Reports &amp; Export</a>
@@ -241,7 +242,7 @@ let master={executives:[]}, masterLoaded=false, visits=[], visitsLoaded=false;
 let canWrite=true, canAdmin=false, offlineNote="";
 let me = (()=>{try{return localStorage.getItem("han_exec")||""}catch(e){return ""}})();
 let view = "visits";
-let filt = {zone:"all", acFrom:today(), acTo:today(), acExec:"all", acType:"all", q:"", dExec:"all", dSt:"all", fuExec:"all", fuWhen:"all", brDate:addDays(today(),1), rpExec:"all", rpStatus:"all", rpFrom:"", rpTo:""};
+let filt = {oExec:"all", oStage:"all", oPeriod:"all", zone:"all", acFrom:today(), acTo:today(), acExec:"all", acType:"all", q:"", dExec:"all", dSt:"all", fuExec:"all", fuWhen:"all", brDate:addDays(today(),1), rpExec:"all", rpStatus:"all", rpFrom:"", rpTo:""};
 
 /* ---------- helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -302,6 +303,7 @@ async function boot(){
   if(realAdmin&&uid){
     // Owner: one folder per executive account under visits/<uid>/v
     subs[uid]=watchVisits(uid,clear,onErr);  // admin's own updates
+    watchOrders(uid); db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
     db.collection("activity").onSnapshot(s=>{actUsers=s.docs.map(d=>d.id);if(view==="activity")render()},()=>{});
     db.collection("visits").onSnapshot(s=>{
       accounts=s.docs.map(d=>({uid:d.id,...d.data()}));
@@ -323,6 +325,7 @@ async function boot(){
       if(!session&&ownDoc&&ownDoc.execId){try{const ss=JSON.parse(localStorage.getItem("han_sess_"+uid)||"null");if(ss&&ss.id===ownDoc.execId&&ss.until>Date.now())session=ss.id}catch(_){}}
       me=loggedIn()?session:""; fixMe(); render();
     },()=>{ownLoaded=true;render()});
+    watchOrders(uid);
     subs[uid]=watchVisits(uid,clear,onErr);
   }else{visitsLoaded=true;ownLoaded=true;baseWrite=false;render()}
   booted=true; route();
@@ -356,7 +359,7 @@ $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.s
 
 /* ---------- routing ---------- */
 const ADMIN_VIEWS=["briefings","reports","activity","setup"];
-function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","help","briefings","reports","activity","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
+function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","help","briefings","reports","activity","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- render ---------- */
@@ -364,7 +367,7 @@ function render(){
   syncRole();
   if(!canAdmin&&ADMIN_VIEWS.includes(view)){view="visits";try{history.replaceState(null,"","#visits")}catch(_){}}
   document.querySelectorAll("#nav a").forEach(a=>{a.classList.toggle("on",a.dataset.v===view);a.hidden=!canAdmin&&ADMIN_VIEWS.includes(a.dataset.v)});
-  $("#nav a[data-v=followups]").firstChild.textContent=canAdmin?"Meetings":"My Meetings";$("#nav a[data-v=visits]").textContent=canAdmin?"All Doctors":"My Doctors";
+  $("#nav a[data-v=followups]").firstChild.textContent=canAdmin?"Meetings":"My Meetings";$("#nav a[data-v=visits]").textContent=canAdmin?"All Doctors":"My Doctors";$("#nav a[data-v=orders]").textContent=canAdmin?"Orders":"My Orders";
   const bd=byDoctor();
   // badges
   const fu=openFollowups(bd).filter(r=>(canAdmin||r.exec.id===me)&&r.next&&r.next<=addDays(today(),1));
@@ -394,6 +397,7 @@ function render(){
   else if(view==="reports")h+=vReports();
   else if(view==="activity")h+=vActivity();
   else if(view==="help")h+=vHelp();
+  else if(view==="orders")h+=vOrders();
   else h+=vSetup();
   $("#main").innerHTML=h;
   bindView(); afterRender();
@@ -517,6 +521,7 @@ function openDoctor(execId,docId){
       </div>
     </div>
     ${canWrite&&db?`<button class="btn pri" id="addMu" style="width:100%;justify-content:center;padding:12px">+ Add meetup update</button>`:""}
+    ${doctorOrdersHtml(d)}
     ${transferHtml(e,d)}
     <span class="lbl">Meetup history (${hs.length})</span>
     ${hs.length?`<div class="hist">${hs.slice().reverse().map((v,i)=>`<div class="it">
@@ -531,7 +536,7 @@ function openDoctor(execId,docId){
   $("#ov").classList.add("on"); docOpen=true;
   $("#dx").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
   const am=$("#addMu"); if(am)am.onclick=()=>{docOpen=false;openForm(execId,docId)};
-  bindTransferForm(e,d,()=>openDoctor(e.id,d.id));
+  bindTransferForm(e,d,()=>openDoctor(e.id,d.id)); bindDoctorOrders(d);
   const zs=$("#zSel"); if(zs)zs.onchange=async()=>{await setZone(d.id,zs.value);openDoctor(e.id,d.id)};
   const sb=$("#schB"); if(sb)sb.onclick=()=>{$("#schF").hidden=!$("#schF").hidden};
   const sg=$("#sGo"); if(sg)sg.onclick=async()=>{
@@ -727,7 +732,7 @@ function vSetup(){
   <div class="grid" style="margin-bottom:16px">
    <div class="card"><b>Add one executive</b>
     <div style="display:grid;gap:8px;margin-top:10px">
-      <input type="text" id="xId" placeholder="Executive ID (e.g. HAN001)">
+      <input type="text" id="xId" placeholder="Executive ID (e.g. DHH01)">
       <input type="text" id="xNm" placeholder="Executive name">
       <input type="tel" id="xPh" placeholder="WhatsApp number">
       <input type="text" id="xPw" placeholder="Default password (blank = WhatsApp no.)">
@@ -782,7 +787,7 @@ function bindView(){
   on("#xP","click",()=>meetupPdf(reportRows()));
   on("#imp","change",importFile);
   on("#sendAll","click",()=>openSendAll(briefCache,filt.brDate));
-  bindTransfers(); if(view==="activity")bindActivity();
+  bindTransfers(); if(view==="activity")bindActivity(); if(view==="orders")bindOrders();
   on("#tpl","click",downloadTemplate);
   on("#rstOpen","click",openReset);
   on("#aGo","click",addOne);
@@ -879,7 +884,7 @@ async function saveVisit(){
   if(!uid){b.disabled=false;b.textContent="Save meetup";return err.textContent="Sign in to claude.ai to save visits."}
   try{
     if(canAdmin&&(!ownDoc||ownDoc.execId!==form.e.id)){const {uid:_u,...rest}=ownDoc||{};await db.doc("visits/"+uid).set({...rest,execId:form.e.id,execName:form.e.name,updated:Date.now()})}
-    await db.collection("visits/"+uid+"/v").add(rec);closeForm();toast("Meetup saved ✓");logAct("meetup",`${rec.doctor} (${rec.hospital}) – ${STATUS[rec.status]}${rec.reason?": "+rec.reason:""}${nextDate(rec)?" · next "+fmtDs(nextDate(rec)):""}`);await donePlans(rec);openDoctor(rec.execId,rec.doctorId)}
+    await db.collection("visits/"+uid+"/v").add(rec);closeForm();toast("Meetup saved ✓");logAct("meetup",`${rec.doctor} (${rec.hospital}) – ${STATUS[rec.status]}${rec.reason?": "+rec.reason:""}${nextDate(rec)?" · next "+fmtDs(nextDate(rec)):""}`);await donePlans(rec);if(rec.status==="positive")orderAfterPositive(rec);else openDoctor(rec.execId,rec.doctorId)}
   catch(e){b.disabled=false;b.textContent="Save meetup";err.textContent=e.code==="invalid_argument"?"You don't have permission to save. Ask the owner for Contributor access.":e.code==="quota_exceeded"?"Storage is full — export and archive old visits.":"Couldn't save ("+(e.code||e.message)+"). Try again."}
 }
 
@@ -1030,13 +1035,13 @@ function downloadTemplate(){
   if(!window.XLSX)return toast("Excel library didn't load");
   const wb=XLSX.utils.book_new();
   const exs=XLSX.utils.json_to_sheet([
-    {"Executive ID":"HAN001","Executive Name":"Ravi Kumar","WhatsApp Number":"9876543210","Default Password":"Han@001"},
-    {"Executive ID":"HAN002","Executive Name":"Priya S","WhatsApp Number":"9876500000","Default Password":""}]);
+    {"Executive ID":"DHH01","Executive Name":"Ravi Kumar","WhatsApp Number":"9876543210","Default Password":"Dhh@01"},
+    {"Executive ID":"DHH02","Executive Name":"Priya S","WhatsApp Number":"9876500000","Default Password":""}]);
   exs["!cols"]=[{wch:14},{wch:24},{wch:18},{wch:18}];
   const ds=XLSX.utils.json_to_sheet([
-    {"Executive ID":"HAN001","Hospital":"Example Multispeciality Hospital","Area":"Velachery","Address":"12, Main Road, Velachery, Chennai 600042","Zone":"","Doctor Name":"Dr. A. Example","Speciality":"Cardiology","Doctor Phone":"","Purchase Role":"Purchase"},
-    {"Executive ID":"HAN001","Hospital":"Example Ortho Clinic","Area":"Perambur","Address":"","Zone":"North Chennai","Doctor Name":"Dr. B. Example","Speciality":"Orthopaedics","Doctor Phone":"","Purchase Role":"Referral Only"},
-    {"Executive ID":"HAN002","Hospital":"Example Women & Child Hospital","Area":"T. Nagar","Address":"","Zone":"","Doctor Name":"Dr. C. Example","Speciality":"Obstetrics","Doctor Phone":"","Purchase Role":"No Purchase"}]);
+    {"Executive ID":"DHH01","Hospital":"Example Multispeciality Hospital","Area":"Velachery","Address":"12, Main Road, Velachery, Chennai 600042","Zone":"","Doctor Name":"Dr. A. Example","Speciality":"Cardiology","Doctor Phone":"","Purchase Role":"Purchase"},
+    {"Executive ID":"DHH01","Hospital":"Example Ortho Clinic","Area":"Perambur","Address":"","Zone":"North Chennai","Doctor Name":"Dr. B. Example","Speciality":"Orthopaedics","Doctor Phone":"","Purchase Role":"Referral Only"},
+    {"Executive ID":"DHH02","Hospital":"Example Women & Child Hospital","Area":"T. Nagar","Address":"","Zone":"","Doctor Name":"Dr. C. Example","Speciality":"Obstetrics","Doctor Phone":"","Purchase Role":"No Purchase"}]);
   ds["!cols"]=[{wch:14},{wch:34},{wch:16},{wch:36},{wch:16},{wch:24},{wch:18},{wch:16},{wch:16}];
   XLSX.utils.book_append_sheet(wb,exs,"Executives"); XLSX.utils.book_append_sheet(wb,ds,"Doctor Assignments");
   save("HAN_upload_template.xlsx",new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
@@ -1097,7 +1102,7 @@ function vLogin(){
   }
   return `<div class="card login"><img class="lg-i" src="${icon}" alt=""><h3>Login</h3>
     <p class="small muted" style="margin:0">Dr. Han Healthcare · Field Sales</p>
-    <label class="f">User ID</label><input type="text" id="lgId" autocomplete="username" placeholder="e.g. HAN001" style="text-transform:uppercase">
+    <label class="f">User ID</label><input type="text" id="lgId" autocomplete="username" placeholder="e.g. DHH01" style="text-transform:uppercase">
     <div class="hello" id="lgName"></div>
     <label class="f" style="margin-top:6px">Password</label><input type="password" id="lgPw" autocomplete="current-password">
     <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:12px"><input type="checkbox" id="lgRem" checked> Keep me logged in on this device</label>
@@ -1221,7 +1226,7 @@ let assign={}, transfers=[], actUsers=[], actQ=Promise.resolve(), actCache={}, a
 let actData={key:"",rows:[],loading:false};
 
 /* ---------- activity logging ---------- */
-const ACT_TYPES={login:"Login",meetup:"Meetup",schedule:"Schedule",transfer:"Transfer",reminder:"Reminder",admin:"Admin"};
+const ACT_TYPES={login:"Login",meetup:"Meetup",order:"Order",schedule:"Schedule",transfer:"Transfer",reminder:"Reminder",admin:"Admin"};
 function actor(){return session==="ADMIN"?{id:"ADMIN",name:"Admin"}:{id:session||me||"",name:execById(session||me)?.name||""}}
 function logAct(type,text){
   if(!db||!uid)return;
@@ -1538,6 +1543,9 @@ async function resetData(full,progress){
     const aParents=await list("activity"); const aIds=new Set(aParents.map(p=>p.split("/")[1])); if(uid)aIds.add(uid);
     for(const id of aIds)paths.push(...await list("activity/"+id+"/d"));
     paths.push(...aParents);
+    const oParents=await list("orders"); const oIds=new Set(oParents.map(p=>p.split("/")[1])); if(uid)oIds.add(uid);
+    for(const id of oIds)paths.push(...await list("orders/"+id+"/o"));
+    paths.push(...oParents);
     for(const c of ["plans","assign","transfers","claims"])paths.push(...await list(c));
     if(full){paths.push(...await list("auth"));if(pass===0)paths.push("public/names");if(master.executives.length||master.theme)paths.push("config/master")}
     const todo=paths.filter(p=>!(p==="config/master"&&pass>0));
@@ -1559,7 +1567,7 @@ function helpBody(){
   const s=(t,b)=>`<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 8px;font-size:17px;color:var(--navy)">${t}</h3>${b}</div>`;
   return `<div class="help" style="line-height:1.6">`+
   s("1. Login",`<ul style="margin:0;padding-left:20px">
-    <li><b>User ID:</b> your own ID (e.g. <b>HAN001</b>). Your name appears while you type it.</li>
+    <li><b>User ID:</b> your own ID (e.g. <b>DHH01</b>). Your name appears while you type it.</li>
     <li><b>Password:</b> the first time, use the default password from your admin. The app then asks you to set your own password (at least 6 characters).</li>
     <li>Tick <b>Keep me logged in on this device</b> so you don't have to log in every time.</li></ul>`)+
   s("2. After every doctor meeting",`<p style="margin:0 0 6px">Tabs: <b>My Doctors</b> and <b>My Meetings</b>.</p><ol style="margin:0;padding-left:20px">
@@ -1582,6 +1590,12 @@ function helpBody(){
     <li>A <b>Doctor handover requests</b> box appears at the top of <b>My Doctors</b>.</li>
     <li><b>Accept:</b> the doctor joins your list with all past meetups.</li>
     <li><b>Decline:</b> the doctor stays with the other executive, who sees that you declined.</li></ol>`)+
+  s("5. Recording an order",`<p style="margin:0 0 6px">When you save a meetup as <b>Positive</b>, the order form opens. You can also open a doctor → <b>New order / quotation</b>, or <b>My Orders</b> → <b>+ New order</b>.</p><ol style="margin:0;padding-left:20px">
+    <li>Enter the <b>order title</b>, <b>products</b> (quantity + unit price, total adds up) and the <b>doctor's estimated amount</b>.</li>
+    <li>As the deal moves, open it in <b>My Orders</b> and tap the next stage: <b>Quotation sent → Quotation signed → Order / PO received → Delivered → Payment collected</b>.</li>
+    <li>Fill what each stage asks: quotation no., signed date, PO number, delivery date, amount received.</li>
+    <li>If the doctor drops it, tap <b>Lost</b> and choose why.</li></ol>
+    <p style="margin:8px 0 0"><b>My Orders</b> shows your open pipeline, orders won, deliveries and payment pending.</p>`)+
   `</div>`;
 }
 function vHelp(){return `<h2>How to use this app</h2>`+helpBody()}
@@ -1589,6 +1603,237 @@ function openHelpSheet(){
   $("#sheet").innerHTML=`<div class="sheet-h"><div style="font-weight:700;font-size:16px">📖 How to use this app</div><button class="x" id="hpX">×</button></div><div class="sheet-b">${helpBody()}</div>`;
   $("#ov").classList.add("on"); docOpen=true;
   $("#hpX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
+}
+
+/* =========================================================
+   ORDERS – from doctor's estimate to payment collected
+   Stored per executive: orders/<account>/o/<id>
+   ========================================================= */
+const STAGES=[["estimate","Interested · estimate"],["quote","Quotation sent"],["signed","Quotation signed"],["po","Order / PO received"],["delivered","Delivered"],["paid","Payment collected"]];
+const STAGE_LBL=Object.assign(Object.fromEntries(STAGES),{lost:"Lost / cancelled"});
+const STAGE_IDX=Object.fromEntries(STAGES.map(([k],i)=>[k,i]));
+const WON=new Set(["signed","po","delivered","paid"]), OPEN=new Set(["estimate","quote"]);
+const STAGE_CLR={estimate:"#5f6f80",quote:"#2563a8",signed:"#7a4fb5",po:"#c9850b",delivered:"#0e7490",paid:"#1f9d6f",lost:"#d64545"};
+const PAY_TERMS=["Advance","On delivery","30 days credit","60 days credit","90 days credit","Other"];
+const LOST_WHY=["Price too high","Went with competitor","Budget not approved","Doctor changed mind","Product not suitable","Other"];
+let orders=[], ordersBy={}, oSubs={}, oParentDone=false, oForm=null;
+function watchOrders(id){
+  if(oSubs[id])return; oSubs[id]=db.collection("orders/"+id+"/o").orderBy("created","desc").limit(1000).onSnapshot(s=>{
+    ordersBy[id]=s.docs.map(d=>({id:d.id,_uid:id,...d.data()})); orders=[].concat(...Object.values(ordersBy)); render();
+  },()=>{});
+}
+function inr(n){n=Math.round(+n||0);return "₹"+n.toLocaleString("en-IN")}
+function oVal(o){return +o.finalAmount||+o.quoteAmount||+o.estAmount||0}
+function oItemsTotal(items){return (items||[]).reduce((a,i)=>a+(+i.qty||0)*(+i.price||0),0)}
+function stageChip(s){return `<span class="chip" style="background:${STAGE_CLR[s]}1c;color:${STAGE_CLR[s]}">${esc(STAGE_LBL[s]||s)}</span>`}
+function stageDots(s){if(s==="lost")return "";const k=STAGE_IDX[s]??0;return `<div style="display:flex;gap:3px;margin-top:8px">${STAGES.map((_,i)=>`<i style="flex:1;height:5px;border-radius:3px;background:${i<=k?STAGE_CLR[s]:"var(--line)"}"></i>`).join("")}</div>`}
+function oInPeriod(o){
+  const d=ymd(new Date(o.created||Date.now())), t=today(), p=filt.oPeriod;
+  if(p==="month")return d.slice(0,7)===t.slice(0,7);
+  if(p==="last"){const x=new Date();x.setDate(1);x.setMonth(x.getMonth()-1);return d.slice(0,7)===ymd(x).slice(0,7)}
+  if(p==="year")return d.slice(0,4)===t.slice(0,4);
+  return true;
+}
+function orderStats(list){
+  const sum=(f,arr)=>arr.reduce((a,o)=>a+f(o),0);
+  const open=list.filter(o=>OPEN.has(o.stage)), won=list.filter(o=>WON.has(o.stage));
+  const collected=sum(o=>+o.paid||0,list.filter(o=>o.stage!=="lost"));
+  return {n:list.length,open:open.length,openVal:sum(oVal,open),won:won.length,wonVal:sum(oVal,won),
+    delivered:list.filter(o=>o.stage==="delivered"||o.stage==="paid").length,collected,pending:Math.max(0,sum(oVal,won)-collected),lost:list.filter(o=>o.stage==="lost").length};
+}
+
+/* ---------- Orders tab ---------- */
+function vOrders(){
+  const mine=canAdmin?orders:orders.filter(o=>o.execId===me);
+  let list=mine.filter(oInPeriod);
+  if(canAdmin&&filt.oExec!=="all")list=list.filter(o=>o.execId===filt.oExec);
+  const st=orderStats(list);
+  const f=filt.oStage;
+  const shown=list.filter(o=>f==="all"||(f==="open"&&OPEN.has(o.stage))||(f==="won"&&WON.has(o.stage))||o.stage===f)
+    .sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0));
+  let h=`<div class="stats">
+    <div class="stat"><b>${inr(st.openVal)}</b><span>Open pipeline · ${st.open} deal${st.open===1?"":"s"}</span></div>
+    <div class="stat"><b>${inr(st.wonVal)}</b><span>Orders won · ${st.won}</span></div>
+    <div class="stat"><b>${st.delivered}</b><span>Delivered</span></div>
+    <div class="stat"><b>${inr(st.collected)}</b><span>Payment collected</span></div>
+    <div class="stat"><b style="color:${st.pending?"var(--red)":"inherit"}">${inr(st.pending)}</b><span>Payment pending</span></div></div>
+  <h2>${canAdmin?"All orders":"My orders"}</h2>
+  <div class="row" style="margin-bottom:10px">
+    ${canAdmin?`<select id="oExec" style="max-width:230px"><option value="all">All executives</option>${master.executives.map(e=>`<option value="${esc(e.id)}">${esc(e.id)} · ${esc(e.name)}</option>`).join("")}</select>`:""}
+    <select id="oPeriod" style="max-width:170px"><option value="all">All time</option><option value="month">This month</option><option value="last">Last month</option><option value="year">This year</option></select>
+    <div class="grow"></div>
+    ${canAdmin?`<button class="btn sm" id="oXls">⬇ Excel</button>`:""}
+    ${canWrite&&db?`<button class="btn pri" id="oNew">+ New order</button>`:""}
+  </div>
+  <div class="seg" style="margin-bottom:14px">${[["all","All",list.length],["open","Open",st.open],["won","Won",st.won],...STAGES.map(([k,l])=>[k,l,list.filter(o=>o.stage===k).length]),["lost","Lost",st.lost]].map(([k,l,n])=>`<button type="button" data-ost="${k}" class="${f===k?"on":""}">${l} <span style="opacity:.7">(${n})</span></button>`).join("")}</div>`;
+  if(canAdmin&&filt.oExec==="all"&&list.length){
+    const ex=[...new Set(list.map(o=>o.execId))];
+    h+=`<div class="tbl" style="margin-bottom:16px"><table><thead><tr><th>Executive</th><th>Orders</th><th>Open pipeline</th><th>Won</th><th>Delivered</th><th>Collected</th><th>Pending</th><th>Lost</th></tr></thead><tbody>`+
+      ex.map(id=>{const s=orderStats(list.filter(o=>o.execId===id));const nm=execById(id)?.name||list.find(o=>o.execId===id).execName;
+        return `<tr><td><b>${esc(nm)}</b> <span class="mono muted small">${esc(id)}</span></td><td>${s.n}</td><td>${inr(s.openVal)}</td><td><b>${inr(s.wonVal)}</b></td><td>${s.delivered}</td><td>${inr(s.collected)}</td><td>${inr(s.pending)}</td><td>${s.lost}</td></tr>`}).join("")+`</tbody></table></div>`;
+  }
+  if(!shown.length)return h+`<div class="empty">No orders here yet.${canWrite&&!canAdmin?"<br><br>When a doctor is positive, tap <b>+ New order</b> to record the estimate.":""}</div>`;
+  h+=`<div class="grid">`+shown.map(o=>`<div class="card doc" data-ord="${esc(o._uid)}|${esc(o.id)}">
+      <div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(o.doctor)}</div><div class="h">${esc(o.hospital)}${o.area?" · "+esc(o.area):""}</div></div>
+      <div style="text-align:right"><b style="font-size:17px;color:var(--navy)">${inr(oVal(o))}</b>${o.paid?`<div class="small muted">paid ${inr(o.paid)}</div>`:""}</div></div>
+      ${o.title?`<div class="small" style="margin-top:6px">${esc(o.title)}</div>`:""}
+      ${canAdmin?`<div class="small" style="margin-top:4px;color:var(--navy)">👤 ${esc(o.execName||"")}</div>`:""}
+      <div class="m">${stageChip(o.stage)}${o.quoteNo?`<span>Quote ${esc(o.quoteNo)}</span>`:""}${o.poNo?`<span>PO ${esc(o.poNo)}</span>`:""}${o.expDelivery&&!["delivered","paid","lost"].includes(o.stage)?`<span class="chip ${o.expDelivery<today()?"due":""}">🚚 ${fmtDs(o.expDelivery)}</span>`:""}</div>
+      ${stageDots(o.stage)}</div>`).join("")+`</div>`;
+  return h;
+}
+function bindOrders(){
+  const oe=$("#oExec"); if(oe){oe.value=filt.oExec;oe.onchange=()=>{filt.oExec=oe.value;render()}}
+  const op=$("#oPeriod"); if(op){op.value=filt.oPeriod;op.onchange=()=>{filt.oPeriod=op.value;render()}}
+  document.querySelectorAll("[data-ost]").forEach(b=>b.onclick=()=>{filt.oStage=b.dataset.ost;render()});
+  document.querySelectorAll("[data-ord]").forEach(c=>c.onclick=()=>{const [u,id]=c.dataset.ord.split("|");const o=orders.find(x=>x._uid===u&&x.id===id);if(o)openOrder(o)});
+  const nw=$("#oNew"); if(nw)nw.onclick=pickDoctorForOrder;
+  const xl=$("#oXls"); if(xl)xl.onclick=exportOrders;
+}
+function pickDoctorForOrder(){
+  const rows=canAdmin?allDoctorRows():myRows();
+  $("#sheet").innerHTML=`<div class="sheet-h"><div style="font-weight:700;font-size:16px">New order · choose doctor</div><button class="x" id="pdX">×</button></div>
+  <div class="sheet-b"><input type="search" id="pdQ" placeholder="Search doctor or hospital…"><div id="pdL" style="margin-top:10px"></div></div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#pdX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
+  const draw=()=>{const q=$("#pdQ").value.toLowerCase();
+    $("#pdL").innerHTML=rows.filter(r=>!q||(r.doc.doctor+" "+r.doc.hospital).toLowerCase().includes(q)).slice(0,60).map(r=>`<div class="card doc" data-pd="${esc(r.doc.id)}" style="margin-bottom:8px;padding:10px 12px"><b>${esc(r.doc.doctor)}</b><div class="small muted">${esc(r.doc.hospital)}${canAdmin?" · "+esc(r.exec.name):""}</div></div>`).join("")||`<div class="empty">No doctors.</div>`;
+    document.querySelectorAll("[data-pd]").forEach(c=>c.onclick=()=>openOrder(null,c.dataset.pd))};
+  $("#pdQ").oninput=draw; draw();
+}
+
+/* ---------- order form ---------- */
+function openOrder(o,docId,banner){
+  const row=allDoctorRows().find(r=>r.doc.id===(o?o.doctorId:docId)); if(!o&&!row)return;
+  const e=o?(execById(o.execId)||{id:o.execId,name:o.execName}):row.exec, d=o?{id:o.doctorId,doctor:o.doctor,hospital:o.hospital,area:o.area}:row.doc;
+  oForm={o,e,d,stage:o?o.stage:"estimate",items:JSON.parse(JSON.stringify((o&&o.items)||[{name:"",qty:1,price:""}])),payTerms:o?.payTerms||"",lostWhy:o?.lostWhy||""};
+  const v=k=>esc(o&&o[k]!=null?o[k]:"");
+  const ro=!(canWrite&&db);
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${o?"Order":"New order"} · ${esc(d.doctor)}</div><div class="small" style="color:#b9cbdd">${esc(d.hospital)}${canAdmin?" · "+esc(e.name):""}</div></div><button class="x" id="ofX">×</button></div>
+  <div class="sheet-b">
+    ${banner?`<div class="notice" style="background:var(--green-soft);border-color:#bfe5d3;color:#13704e">${banner}</div>`:""}
+    <span class="lbl" style="margin-top:0">Stage</span>
+    <div class="seg" id="ofSt">${STAGES.map(([k,l],i)=>`<button type="button" data-s="${k}">${i+1}. ${l}</button>`).join("")}<button type="button" data-s="lost" style="color:var(--red)">✕ Lost</button></div>
+    <span class="lbl">Order title</span><input type="text" id="ofTitle" value="${v("title")}" placeholder="e.g. 2 × Patient monitor + 1 × Defibrillator">
+    <span class="lbl">Products</span>
+    <div id="ofItems"></div>
+    <button type="button" class="btn sm" id="ofAddI" style="margin-top:6px">+ Add product</button>
+    <div class="row" style="margin-top:8px"><span class="small muted grow">Products total</span><b id="ofItT">₹0</b></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:6px">
+      <div><span class="lbl">Doctor's estimated amount (₹)</span><input type="tel" inputmode="numeric" id="ofEst" value="${v("estAmount")}" placeholder="What the doctor expects to spend"></div>
+      <div class="ofq"><span class="lbl">Quoted amount (₹)</span><input type="tel" inputmode="numeric" id="ofQAmt" value="${v("quoteAmount")}" placeholder="Leave blank = products total"></div>
+      <div class="ofq"><span class="lbl">Quotation no.</span><input type="text" id="ofQNo" value="${v("quoteNo")}"></div>
+      <div class="ofq"><span class="lbl">Quotation date</span><input type="date" id="ofQDt" value="${v("quoteDate")}"></div>
+      <div class="ofs"><span class="lbl">Quotation signed on *</span><input type="date" id="ofSDt" value="${v("signedDate")}"></div>
+      <div class="ofp"><span class="lbl">PO / order number *</span><input type="text" id="ofPo" value="${v("poNo")}"></div>
+      <div class="ofp"><span class="lbl">PO date</span><input type="date" id="ofPoDt" value="${v("poDate")}"></div>
+      <div class="ofp"><span class="lbl">Final order value (₹)</span><input type="tel" inputmode="numeric" id="ofFin" value="${v("finalAmount")}" placeholder="Blank = quoted amount"></div>
+      <div class="ofp"><span class="lbl">Expected delivery</span><input type="date" id="ofExp" value="${v("expDelivery")}"></div>
+      <div class="ofd"><span class="lbl">Delivered on *</span><input type="date" id="ofDel" value="${v("deliveredDate")}"></div>
+      <div class="ofw"><span class="lbl">Amount received (₹)</span><input type="tel" inputmode="numeric" id="ofPaid" value="${v("paid")}"></div>
+    </div>
+    <div class="ofp"><span class="lbl">Payment terms</span><div class="seg" id="ofPay">${PAY_TERMS.map(t=>`<button type="button" data-p="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>
+    <div class="ofl"><span class="lbl">Why lost? *</span><div class="seg" id="ofLost">${LOST_WHY.map(t=>`<button type="button" data-l="${esc(t)}">${esc(t)}</button>`).join("")}</div></div>
+    <span class="lbl">Notes</span><textarea id="ofNotes" style="min-height:70px" placeholder="Special terms, competitor price, warranty, who signed…">${v("notes")}</textarea>
+    ${o&&o.history&&o.history.length?`<details style="margin-top:12px"><summary class="lbl" style="cursor:pointer;margin:0">Stage history (${o.history.length})</summary><div class="hist">${o.history.slice().reverse().map(x=>`<div class="it"><div class="d">${esc(fmtD(ymd(new Date(x.at))))} · ${esc(hm(x.at))}</div>${stageChip(x.stage)} <span class="small muted">by ${esc(x.byName||x.by||"")}</span></div>`).join("")}</div></details>`:""}
+    <div class="err" id="ofErr"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px">${banner?`<button class="btn" id="ofSkip">Skip for now</button>`:""}<button class="btn" id="ofC">Cancel</button>${ro?"":`<button class="btn pri" id="ofGo">Save order</button>`}</div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  const close=()=>{$("#ov").classList.remove("on");docOpen=false;oForm=null};
+  $("#ofX").onclick=$("#ofC").onclick=close;
+  const sk=$("#ofSkip"); if(sk)sk.onclick=()=>{oForm=null;openDoctor(e.id,d.id)};
+  const drawItems=()=>{
+    $("#ofItems").innerHTML=oForm.items.map((it,i)=>`<div class="row" style="gap:6px;margin-bottom:6px">
+      <input type="text" data-in="${i}" value="${esc(it.name)}" placeholder="Product" style="flex:3;min-width:120px">
+      <input type="tel" inputmode="numeric" data-iq="${i}" value="${esc(it.qty)}" placeholder="Qty" style="flex:0 0 64px">
+      <input type="tel" inputmode="numeric" data-ip="${i}" value="${esc(it.price)}" placeholder="Unit ₹" style="flex:1;min-width:90px">
+      <button type="button" class="btn sm" data-ix="${i}" title="Remove">✕</button></div>`).join("");
+    const tot=()=>{$("#ofItT").textContent=inr(oItemsTotal(oForm.items))};
+    document.querySelectorAll("[data-in]").forEach(x=>x.oninput=()=>{oForm.items[+x.dataset.in].name=x.value});
+    document.querySelectorAll("[data-iq]").forEach(x=>x.oninput=()=>{oForm.items[+x.dataset.iq].qty=x.value.replace(/[^\d.]/g,"");tot()});
+    document.querySelectorAll("[data-ip]").forEach(x=>x.oninput=()=>{oForm.items[+x.dataset.ip].price=x.value.replace(/[^\d.]/g,"");tot()});
+    document.querySelectorAll("[data-ix]").forEach(x=>x.onclick=()=>{oForm.items.splice(+x.dataset.ix,1);if(!oForm.items.length)oForm.items.push({name:"",qty:1,price:""});drawItems()});
+    tot();
+  };
+  $("#ofAddI").onclick=()=>{oForm.items.push({name:"",qty:1,price:""});drawItems()};
+  const paint=()=>{
+    const s=oForm.stage, k=s==="lost"?-1:STAGE_IDX[s];
+    document.querySelectorAll("#ofSt button").forEach(b=>{const on=b.dataset.s===s;b.classList.toggle("on",on);b.style.background=on?STAGE_CLR[b.dataset.s]:"";b.style.borderColor=on?STAGE_CLR[b.dataset.s]:""});
+    const show=(cls,yes)=>document.querySelectorAll(cls).forEach(x=>x.style.display=yes?"":"none");
+    show(".ofq",k>=1||s==="lost"); show(".ofs",k>=2); show(".ofp",k>=3); show(".ofd",k>=4); show(".ofw",k>=2); show(".ofl",s==="lost");
+    document.querySelectorAll("#ofPay button").forEach(b=>b.classList.toggle("on",b.dataset.p===oForm.payTerms));
+    document.querySelectorAll("#ofLost button").forEach(b=>b.classList.toggle("on",b.dataset.l===oForm.lostWhy));
+  };
+  document.querySelectorAll("#ofSt button").forEach(b=>b.onclick=()=>{oForm.stage=b.dataset.s;
+    const t=today(); if(b.dataset.s==="quote"&&!$("#ofQDt").value)$("#ofQDt").value=t; if(b.dataset.s==="signed"&&!$("#ofSDt").value)$("#ofSDt").value=t;
+    if(b.dataset.s==="po"&&!$("#ofPoDt").value)$("#ofPoDt").value=t; if(b.dataset.s==="delivered"&&!$("#ofDel").value)$("#ofDel").value=t; paint()});
+  document.querySelectorAll("#ofPay button").forEach(b=>b.onclick=()=>{oForm.payTerms=oForm.payTerms===b.dataset.p?"":b.dataset.p;paint()});
+  document.querySelectorAll("#ofLost button").forEach(b=>b.onclick=()=>{oForm.lostWhy=oForm.lostWhy===b.dataset.l?"":b.dataset.l;paint()});
+  drawItems(); paint();
+  const go=$("#ofGo"); if(go)go.onclick=saveOrder;
+}
+async function saveOrder(){
+  const F=oForm, err=$("#ofErr"), num=id=>{const x=$("#"+id).value.replace(/[^\d.]/g,"");return x?+x:0}, val=id=>$("#"+id).value.trim();
+  err.textContent="";
+  const items=F.items.filter(i=>i.name.trim()||+i.price).map(i=>({name:i.name.trim(),qty:+i.qty||1,price:+i.price||0}));
+  const s=F.stage, k=s==="lost"?-1:STAGE_IDX[s];
+  const rec={execId:F.e.id,execName:F.e.name,doctorId:F.d.id,doctor:F.d.doctor,hospital:F.d.hospital,area:F.d.area||"",
+    title:val("ofTitle"),items,estAmount:num("ofEst"),quoteAmount:num("ofQAmt")||oItemsTotal(items),quoteNo:val("ofQNo"),quoteDate:val("ofQDt"),
+    signedDate:val("ofSDt"),poNo:val("ofPo"),poDate:val("ofPoDt"),finalAmount:num("ofFin"),expDelivery:val("ofExp"),deliveredDate:val("ofDel"),
+    paid:num("ofPaid"),payTerms:F.payTerms,lostWhy:F.lostWhy,notes:val("ofNotes"),stage:s,updated:Date.now()};
+  if(!rec.title&&!items.length&&!rec.estAmount)return err.textContent="Add a title, a product, or the doctor's estimated amount.";
+  if(k>=2&&!rec.signedDate)return err.textContent="Enter the date the quotation was signed.";
+  if(k>=3&&!rec.poNo)return err.textContent="Enter the PO / order number.";
+  if(k>=3&&!rec.finalAmount)rec.finalAmount=rec.quoteAmount;
+  if(k>=4&&!rec.deliveredDate)return err.textContent="Enter the delivery date.";
+  if(s==="paid"&&!rec.paid)rec.paid=rec.finalAmount||rec.quoteAmount;
+  if(s==="lost"&&!rec.lostWhy)return err.textContent="Choose why the order was lost.";
+  const a=actor(), changed=!F.o||F.o.stage!==s;
+  rec.history=[...((F.o&&F.o.history)||[]),...(changed?[{stage:s,at:Date.now(),by:a.id,byName:a.name}]:[])];
+  const btn=$("#ofGo"); btn.disabled=true; btn.textContent="Saving…";
+  try{
+    if(F.o){await db.doc("orders/"+F.o._uid+"/o/"+F.o.id).set({...rec,created:F.o.created||Date.now()})}
+    else{
+      const folder=(canAdmin&&(accounts.find(a=>a.execId===F.e.id)||{}).uid)||uid;
+      await db.doc("orders/"+folder).set({execId:folder===uid&&canAdmin?"ADMIN":F.e.id,updated:Date.now()});
+      await db.collection("orders/"+folder+"/o").add({...rec,created:Date.now()});
+    }
+    logAct("order",`${rec.doctor} (${rec.hospital}) – ${STAGE_LBL[s]} – ${inr(oVal(rec))}${rec.title?" – "+rec.title:""}${s==="lost"?" – "+rec.lostWhy:""}`);
+    $("#ov").classList.remove("on"); docOpen=false; oForm=null;
+    toast(s==="lost"?"Order marked lost":WON.has(s)?"Order saved ✓ 🎉":"Order saved ✓");
+    if(view!=="orders"){location.hash="orders"}else render();
+  }catch(x){btn.disabled=false;btn.textContent="Save order";err.textContent=x.code==="invalid_argument"?"You don't have permission to save this order.":"Couldn't save ("+(x.code||x.message)+")"}
+}
+function orderAfterPositive(rec){
+  const open=orders.find(o=>o.doctorId===rec.doctorId&&!["paid","lost"].includes(o.stage));
+  const msg="🎉 Doctor is positive! Record the expected order now — at least the doctor's estimated amount.";
+  if(open)openOrder(open,null,"🎉 Doctor is positive! Update this order's stage or amount.");
+  else openOrder(null,rec.doctorId,msg);
+}
+function exportOrders(){
+  let list=orders.filter(oInPeriod); if(filt.oExec!=="all")list=list.filter(o=>o.execId===filt.oExec);
+  if(!list.length)return toast("No orders to export");
+  if(!window.XLSX)return toast("Excel library didn't load");
+  const rows=list.sort((a,b)=>(a.created||0)-(b.created||0)).map(o=>({"Created":ymd(new Date(o.created||0)),"Executive":o.execName,"Executive ID":o.execId,"Doctor":o.doctor,"Hospital":o.hospital,"Area":o.area||"",
+    "Order title":o.title||"","Products":(o.items||[]).map(i=>`${i.name} x${i.qty} @ ${i.price}`).join("; "),"Stage":STAGE_LBL[o.stage],
+    "Doctor estimate (₹)":o.estAmount||"","Quoted (₹)":o.quoteAmount||"","Final order value (₹)":o.finalAmount||"","Received (₹)":o.paid||"",
+    "Quotation no.":o.quoteNo||"","Quotation date":o.quoteDate||"","Signed on":o.signedDate||"","PO no.":o.poNo||"","PO date":o.poDate||"",
+    "Expected delivery":o.expDelivery||"","Delivered on":o.deliveredDate||"","Payment terms":o.payTerms||"","Lost reason":o.lostWhy||"","Notes":o.notes||""}));
+  const wb=XLSX.utils.book_new(), ws=XLSX.utils.json_to_sheet(rows);
+  ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.max(10,Math.min(40,k.length+4))}));
+  XLSX.utils.book_append_sheet(wb,ws,"Orders");
+  save(`HAN_Orders_${today()}.xlsx`,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
+}
+
+function doctorOrdersHtml(d){
+  const os=orders.filter(o=>o.doctorId===d.id);
+  return `${canWrite&&db?`<button class="btn" id="ordNew" style="width:100%;justify-content:center;margin-top:10px">💰 New order / quotation</button>`:""}`+
+    (os.length?`<span class="lbl">Orders (${os.length})</span>`+os.map(o=>`<div class="card doc" data-dord="${esc(o._uid)}|${esc(o.id)}" style="padding:10px 12px;margin-bottom:6px"><div class="row"><b class="grow">${esc(o.title||"Order")}</b><b>${inr(oVal(o))}</b></div><div class="m" style="margin-top:4px">${stageChip(o.stage)}${o.paid?`<span>paid ${inr(o.paid)}</span>`:""}</div></div>`).join(""):"");
+}
+function bindDoctorOrders(d){
+  const n=$("#ordNew"); if(n)n.onclick=()=>openOrder(null,d.id);
+  document.querySelectorAll("[data-dord]").forEach(c=>c.onclick=()=>{const [u,id]=c.dataset.dord.split("|");const x=orders.find(z=>z._uid===u&&z.id===id);if(x)openOrder(x)});
 }
 
 /* ---------- confirm box ---------- */

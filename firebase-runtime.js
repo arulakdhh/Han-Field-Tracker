@@ -71,6 +71,7 @@ async function onAuth(u){
   if(realAdmin){
     adminDoc={pwHash:"firebase"};ownLoaded=true;
     subs.ADMIN=watchVisits("ADMIN",clear,onErr);
+    watchOrders("ADMIN"); db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
     db.collection("visits").onSnapshot(s=>{
       const ids=s.docs.map(d=>d.id);
       for(const id of ids)if(!subs[id])subs[id]=watchVisits(id,clear,onErr);
@@ -92,6 +93,7 @@ async function onAuth(u){
       $("#main").dataset.screen="";render();
     },()=>kickOut());
     subs[session]=watchVisits(session,clear,onErr);
+    watchOrders(session);
   }
   if(justLoggedIn){justLoggedIn=false;setTimeout(()=>logAct("login",(session==="ADMIN"?"Admin":(execById(session)?.name||pubNames[session]?.name||session))+" logged in"),1500)}
   route();
@@ -135,7 +137,7 @@ function vLogin(){
   let msg="";try{msg=sessionStorage.getItem("han_msg")||"";sessionStorage.removeItem("han_msg")}catch(e){}
   return `<div class="card login"><img class="lg-i" src="${icon}" alt=""><h3>Login</h3>
     <p class="small muted" style="margin:0">Dr. Han Healthcare · Field Sales</p>
-    <label class="f">User ID</label><input type="text" id="lgId" autocomplete="username" placeholder="e.g. HAN001" style="text-transform:uppercase">
+    <label class="f">User ID</label><input type="text" id="lgId" autocomplete="username" placeholder="e.g. DHH01" style="text-transform:uppercase">
     <div class="hello" id="lgName"></div>
     <label class="f" style="margin-top:6px">Password</label><input type="password" id="lgPw" autocomplete="current-password">
     <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:12px"><input type="checkbox" id="lgRem" checked> Keep me logged in on this device</label>
