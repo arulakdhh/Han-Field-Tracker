@@ -223,16 +223,21 @@ main{padding-bottom:30px}
 header .brand,header nav{position:relative;z-index:1}
 .hero{max-width:390px;margin:18px auto -8px;text-align:center}
 .hero svg{width:100%;height:auto;display:block;overflow:visible}
-.hero .road{fill:none;stroke:var(--accent);stroke-width:3;stroke-dasharray:7 8;opacity:.5;animation:dash 1.2s linear infinite}
-@keyframes dash{to{stroke-dashoffset:-15}}
-.hero .ring{fill:none;stroke:var(--accent);stroke-width:2.5;transform-box:fill-box;transform-origin:center;opacity:0;animation:ping 8s ease-out infinite}
-@keyframes ping{0%,19%{transform:scale(1);opacity:0}20%{opacity:.85}34%{transform:scale(2.8);opacity:0}100%{opacity:0}}
-.hero .won{opacity:0;transform-box:fill-box;transform-origin:center bottom;animation:won 8s ease-out infinite;animation-delay:5.2s}
-@keyframes won{0%,19%{opacity:0;transform:translateY(6px) scale(.8)}24%{opacity:1;transform:none}40%{opacity:1}48%,100%{opacity:0}}
-.hero .cap{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:4px}
-.hero .cap span{animation:capHi 8s infinite}
-.hero .cap span:nth-child(2){animation-delay:2.4s}.hero .cap span:nth-child(3){animation-delay:5.2s}
-@keyframes capHi{0%,19%{color:var(--muted)}22%,36%{color:var(--accent)}40%,100%{color:var(--muted)}}
+/* login hero: heart-monitor pulse through the Dr. Han cross */
+.hero .grid line{stroke:var(--accent);stroke-width:1;opacity:.08}
+.hero .trace-bg{fill:none;stroke:var(--accent);stroke-width:2;opacity:.13;stroke-linejoin:round;stroke-linecap:round}
+.hero .trace{fill:none;stroke:var(--accent);stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round;stroke-dasharray:1 1;stroke-dashoffset:1;animation:trace 3.2s linear infinite}
+@keyframes trace{0%{stroke-dashoffset:1;opacity:1}70%{stroke-dashoffset:0;opacity:1}88%{stroke-dashoffset:0;opacity:0}100%{stroke-dashoffset:1;opacity:0}}
+.hero .blip{animation:blip 3.2s linear infinite}
+@keyframes blip{0%,70%{opacity:1}76%,100%{opacity:0}}
+.hero .emb{transform-box:fill-box;transform-origin:center;animation:beat 3.2s ease-out infinite}
+@keyframes beat{0%,30%{transform:scale(1)}35%{transform:scale(1.09)}41%{transform:scale(.98)}48%,100%{transform:scale(1)}}
+.hero .pulse{fill:none;stroke:#d64545;stroke-width:2;transform-box:fill-box;transform-origin:center;opacity:0;animation:pulse 3.2s ease-out infinite}
+.hero .pulse.p2{animation-delay:.25s}
+@keyframes pulse{0%,31%{transform:scale(.9);opacity:0}34%{opacity:.45}70%{transform:scale(2.1);opacity:0}100%{opacity:0}}
+.hero .cap{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;font-weight:600;color:var(--muted);margin-top:2px;letter-spacing:.02em}
+.hero .cap i{width:4px;height:4px;border-radius:50%;background:var(--accent);opacity:.6;display:inline-block}
+@media (prefers-reduced-motion:reduce){.hero .trace{stroke-dashoffset:0;animation:none}.hero .emb,.hero .pulse,.hero .blip{animation:none}.hero .blip{opacity:0}}
 .confetti{position:fixed;left:0;right:0;top:55%;height:0;pointer-events:none;z-index:60}
 .confetti i{position:absolute;top:0;width:8px;height:12px;border-radius:2px;animation:conf 1.9s cubic-bezier(.15,.7,.35,1) forwards}
 @keyframes conf{0%{transform:translate(0,0) rotate(0);opacity:1}45%{transform:translate(calc(var(--dx)*.6),var(--dy)) rotate(calc(var(--r)*.5));opacity:1}100%{transform:translate(var(--dx),160px) rotate(var(--r));opacity:0}}
@@ -1980,18 +1985,22 @@ function docInfoExtraHtml(d){
 
 /* ---------- concept animations ---------- */
 function loginHero(){
-  const pts=[[30,118],[115,58],[205,102],[325,44]], path="M30,118 L115,58 L205,102 L325,44";
-  const hosp=(x,y,i)=>`<g><circle class="ring" cx="${x}" cy="${y}" r="10" style="animation-delay:${[0,0,2.4,5.2][i]}s"/>
-    <rect x="${x-12}" y="${y-12}" width="24" height="24" rx="6" fill="#fff" stroke="var(--line)" stroke-width="1.5"/>
-    <rect x="${x-2.5}" y="${y-8}" width="5" height="16" rx="1.5" fill="#d64545"/><rect x="${x-8}" y="${y-2.5}" width="16" height="5" rx="1.5" fill="#d64545"/></g>`;
+  // ECG trace across the card; the beat lands on the Dr. Han cross in the middle
+  const ecg="M0,96 L58,96 L66,90 L74,96 L86,96 L92,104 L100,58 L108,118 L115,96 L128,96 L138,88 L150,96 L150,96 "+
+            "M210,96 L224,96 L232,90 L240,96 L252,96 L258,104 L266,58 L274,118 L281,96 L294,96 L304,88 L316,96 L360,96";
+  const grid=[...Array(9)].map((_,i)=>`<line x1="${i*45}" y1="22" x2="${i*45}" y2="136"/>`).join("")+[40,68,96,124].map(y=>`<line x1="0" y1="${y}" x2="360" y2="${y}"/>`).join("");
   return `<div class="hero" aria-hidden="true"><svg viewBox="0 0 360 150">
-    <path class="road" d="${path}"/>
-    ${pts.slice(1).map((p,i)=>hosp(p[0],p[1],i+1)).join("")}
-    <g transform="translate(30 118)"><circle r="9" fill="var(--accent)" opacity=".18"/><circle r="4" fill="var(--accent)"/></g>
-    <g transform="translate(325 14)"><g class="won"><rect x="-34" y="-12" width="68" height="22" rx="11" fill="var(--accent)"/><text x="0" y="3.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Inter,sans-serif">Order ✓</text></g></g>
-    <g><animateMotion dur="8s" repeatCount="indefinite" path="${path}" keyPoints="0;0.296;0.296;0.597;0.597;1;1" keyTimes="0;0.2;0.3;0.5;0.6;0.85;1" calcMode="linear"/>
-      <circle r="11" fill="var(--navy)" opacity=".15"/><path d="M0,-14 C-7,-14 -9,-8 -9,-6 C-9,0 0,8 0,8 C0,8 9,0 9,-6 C9,-8 7,-14 0,-14 Z" fill="var(--navy)"/><circle cy="-6" r="3.2" fill="#fff"/></g>
-  </svg><div class="cap"><span>📍 Visit doctors</span><span>📝 Log meetups</span><span>💰 Win orders</span></div></div>`;
+    <g class="grid">${grid}</g>
+    <path class="trace-bg" d="${ecg}"/>
+    <path class="trace" pathLength="1" d="${ecg}"/>
+    <g class="blip"><circle r="7" fill="var(--accent)" opacity=".2"/><circle r="3.2" fill="var(--accent)"/>
+      <animateMotion dur="3.2s" repeatCount="indefinite" path="${ecg}" keyPoints="0;1;1" keyTimes="0;0.7;1" calcMode="linear"/></g>
+    <circle class="pulse" cx="180" cy="80" r="30"/><circle class="pulse p2" cx="180" cy="80" r="30"/>
+    <g class="emb">
+      <rect x="152" y="52" width="56" height="56" rx="16" fill="#fff" stroke="var(--line)" stroke-width="1.5"/>
+      <rect x="174" y="60" width="12" height="40" rx="3.5" fill="#d64545"/><rect x="160" y="74" width="40" height="12" rx="3.5" fill="#d64545"/>
+    </g>
+  </svg><div class="cap"><span>Doctor visits</span><i></i><span>Follow-ups</span><i></i><span>Quotations &amp; orders</span></div></div>`;
 }
 function celebrate(big){
   try{if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return}catch(e){}
