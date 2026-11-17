@@ -281,6 +281,7 @@ body[data-theme="midnight"] .qres{background:#111827}
     <a href="#followups" data-v="followups">Follow-ups<span class="n" id="fuN" hidden></span></a>
     <a href="#orders" data-v="orders">Orders</a>
     <a href="#quotes" data-v="quotes">Quotations</a>
+    <a href="#gquotes" data-v="gquotes">General Quotations</a>
     <a href="#help" data-v="help">Help</a>
     <a href="#briefings" data-v="briefings">WhatsApp Briefings<span class="n" id="brN" hidden></span></a>
     <a href="#reports" data-v="reports">Reports &amp; Export</a>
@@ -432,8 +433,8 @@ function fixMe(){
 $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.setItem("han_exec",me)}catch(_){};render()});
 
 /* ---------- routing ---------- */
-const ADMIN_VIEWS=["briefings","reports","activity","convert","setup"];
-function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","quotes","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
+const ADMIN_VIEWS=["gquotes","briefings","reports","activity","convert","setup"];
+function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","quotes","gquotes","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- render ---------- */
@@ -474,6 +475,7 @@ function render(){
   else if(view==="help")h+=vHelp();
   else if(view==="orders")h+=vOrders();
   else if(view==="quotes")h+=vQuotes();
+  else if(view==="gquotes")h+=vGQuotes();
   else h+=vSetup();
   $("#main").innerHTML=h;
   bindView(); afterRender(); ensureExtraSubs();
@@ -869,7 +871,7 @@ function bindView(){
   on("#xP","click",()=>meetupPdf(reportRows()));
   on("#imp","change",importFile);
   on("#sendAll","click",()=>openSendAll(briefCache,filt.brDate));
-  bindTransfers(); if(view==="activity")bindActivity(); if(view==="orders")bindOrders(); if(view==="quotes")bindQuotes(); if(view==="setup")bindQuoteSetup();
+  bindTransfers(); if(view==="activity")bindActivity(); if(view==="orders")bindOrders(); if(view==="quotes")bindQuotes(); if(view==="gquotes")bindGQuotes(); if(view==="setup")bindQuoteSetup();
   on("#tpl","click",downloadTemplate);
   on("#rstOpen","click",openReset);
   on("#aGo","click",addOne);
@@ -1939,7 +1941,7 @@ function infoMissing(d){const m=[];if(!String(d.phone||"").trim())m.push("phone"
 function ensureExtraSubs(){
   if(extraStarted||!db||!uid||!loggedIn())return; extraStarted=true;
   db.collection("docinfo").onSnapshot(s=>{const m={};s.docs.forEach(d=>m[d.id]=d.data());infoMap=m;render()},()=>{});
-  startQuoteSubs();
+  startQuoteSubs(); startGenSubs();
   watchOrders(uid); if(canAdmin)db.collection("orders").onSnapshot(s=>{s.docs.forEach(d=>watchOrders(d.id))},()=>{});
 }
 function openDocInfo(execId,docId){
@@ -2377,8 +2379,8 @@ function openQuote(id){
   });
 }
 function stripQ(q){const o={...q};delete o.id;return o}
-function qTotalsHtml(t,o){
-  const r=[[`Gross value (MRP × qty)`,inr2(t.amount)]];
+function qTotalsHtml(t,o,lbl){
+  const r=[[`Gross value (${lbl||"MRP"} × qty)`,inr2(t.amount)]];
   if(o.hospOn)r.push([`Less: Hospital discount @ ${+o.hospPct}%`,"− "+inr2(t.hospDisc)]);
   if(o.surgOn)r.push([`Less: Surgeon discount @ ${+o.surgPct}%`,"− "+inr2(t.surgDisc)]);
   const g=r2q((t.cgst||0)+(t.sgst||0)+(t.igst||0)); if(g)r.push(["Add: GST",inr2(g)]);
@@ -2577,6 +2579,200 @@ function bindQuoteSetup(){
   b.onclick=async()=>{const d=+$("#qcDays").value.replace(/\D/g,"");
     if(!(d>=1&&d<=365))return toast("Validity must be 1–365 days");
     master={...master,quote:{...(master.quote||{}),validDays:d}}; await saveMaster("Quotation settings saved"); logAct("admin",`Quotation validity set to ${d} days`)};
+}
+
+/* =========================================================
+   GENERAL QUOTATIONS (admin only) – any customer, price = purchase rate + one %
+   Rates: rates/products (published by the inventory; ADMIN + inventory staff only)
+   Saved: gquotes/GEN_<FY>_<SEQ>   number DHH/QTN/GEN/<FY>/<SEQ>
+   PDF shows only the final price (column "Price"), never the rate or the %.
+   ========================================================= */
+let rateMap=null, rateErr="", gquotes=[], gLoaded=false, gSubStarted=false, gForm=null;
+function startGenSubs(){
+  if(gSubStarted||!db||!uid||!canAdmin)return; gSubStarted=true;
+  const rer=()=>{if(view==="gquotes"&&!gForm)render()};
+  db.doc("rates/products").onSnapshot(s=>{const d=s.exists?s.data():null;rateErr=d?"":"missing";rateMap={};((d&&d.list)||[]).forEach(r=>rateMap[r.mat]=r);rer()},
+    e=>{rateErr=/invalid_argument|permission/i.test((e&&(e.code||e.message))||"")?"denied":"error";rateMap={};rer()});
+  db.collection("gquotes").onSnapshot(s=>{gquotes=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));gLoaded=true;rer()},()=>{gLoaded=true;rer()});
+}
+function gNote(){
+  if(rateErr==="denied")return `Can't read purchase rates: update the <b>Firestore rules</b> (paste the new firestore.rules → Publish).`;
+  if(rateErr==="missing")return `No purchase rates yet. Open <a href="inventory/" target="_blank" style="color:var(--accent);font-weight:700">the inventory</a> → Sell Order → Field quotations → <b>Send product list now</b>.`;
+  if(rateErr)return "Couldn't load purchase rates. Check the internet and reload.";
+  return "";
+}
+function gBase(p,basis){const r=rateMap&&rateMap[p.mat]||{};const net=+r.netRate||0, inv=+r.rate||0;return basis==="inv"?(inv||net):(net||inv)}
+
+function vGQuotes(){
+  const st=filt.gSt||"all", qq=(filt.gQ||"").toLowerCase();
+  const shown=gquotes.filter(q=>(st==="all"||q.status===st)&&(!qq||[q.no,q.customer?.name,...(q.lines||[]).map(l=>l.desc)].join(" ").toLowerCase().includes(qq)));
+  const m=today().slice(0,7), sum=a=>a.reduce((x,q)=>x+(+q.totals?.grand||0),0);
+  const open=gquotes.filter(q=>q.status==="open"), acc=gquotes.filter(q=>q.status==="accepted");
+  let h=`<div class="stats">
+    <div class="stat"><b>${gquotes.filter(q=>(q.date||"").slice(0,7)===m).length}</b><span>This month</span></div>
+    <div class="stat"><b>${inr(sum(open))}</b><span>Open · ${open.length}</span></div>
+    <div class="stat"><b>${inr(sum(acc))}</b><span>Accepted · ${acc.length}</span></div>
+    <div class="stat"><b>${rateMap?Object.keys(rateMap).length:"…"}</b><span>Products with rates</span></div></div>
+  <h2>General quotations <span class="chip" style="vertical-align:middle">Admin only</span></h2>
+  <p class="small muted" style="margin:-4px 0 12px">For any customer. Price = purchase rate + your %. The PDF shows only the final price.</p>`;
+  const n=gNote(); if(n)h+=`<div class="notice">${n}</div>`;
+  h+=`<div class="row" style="margin-bottom:10px"><input type="search" id="gQ" placeholder="Search number, customer, product…" style="flex:1;min-width:180px" value="${esc(filt.gQ||"")}">
+    <button class="btn sm" id="gXls">⬇ Excel</button>${canWrite&&db?`<button class="btn pri" id="gNew">+ New quotation</button>`:""}</div>
+  <div class="seg" style="margin-bottom:14px">${[["all","All",gquotes.length],...Object.keys(Q_STATUS).map(k=>[k,Q_STATUS[k],gquotes.filter(q=>q.status===k).length])].map(([k,l,c])=>`<button type="button" data-gst="${k}" class="${st===k?"on":""}">${l} <span style="opacity:.7">(${c})</span></button>`).join("")}</div>`;
+  if(!gLoaded)return h+`<div class="grid"><div class="skel"></div><div class="skel"></div></div>`;
+  if(!shown.length)return h+`<div class="empty">No general quotations yet.<br><br>Tap <b>+ New quotation</b>.</div>`;
+  return h+`<div class="grid">`+shown.map(q=>`<div class="card doc" data-gid="${esc(q.id)}">
+    <div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(q.customer?.name||"")}</div><div class="h">${esc((q.customer?.address||"").split("\n")[0])}</div></div>
+    <div style="text-align:right"><b style="font-size:17px;color:var(--navy)">${inr(q.totals?.grand)}</b><div class="small muted">${(q.lines||[]).length} product${(q.lines||[]).length===1?"":"s"} · +${esc(q.markup)}%</div></div></div>
+    <div class="m">${qChip(q.status)}<span class="mono">${esc(q.no)}</span><span>${esc(fmtDs(q.date))}</span></div></div>`).join("")+`</div>`;
+}
+function bindGQuotes(){
+  const qq=$("#gQ"); if(qq)qq.oninput=()=>{filt.gQ=qq.value;clearTimeout(bindGQuotes._t);bindGQuotes._t=setTimeout(()=>{render();const x=$("#gQ");if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length)}},250)};
+  document.querySelectorAll("[data-gst]").forEach(b=>b.onclick=()=>{filt.gSt=b.dataset.gst;render()});
+  document.querySelectorAll("[data-gid]").forEach(c=>c.onclick=()=>openGQuote(c.dataset.gid));
+  const n=$("#gNew"); if(n)n.onclick=()=>openGForm(null);
+  const x=$("#gXls"); if(x)x.onclick=exportGQuotes;
+}
+function openGQuote(id){
+  const q=gquotes.find(x=>x.id===id); if(!q)return;
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${esc(q.no)}</div><div class="small" style="color:#b9cbdd">${esc(q.customer?.name||"")}</div></div><button class="x" id="gvX">×</button></div>
+  <div class="sheet-b">
+    <div class="auto"><div>Date<b>${esc(fmtD(q.date))}</b></div><div>Valid until<b>${esc(fmtD(q.validUntil))}</b></div><div>Status<b>${qChip(q.status)}</b></div><div>Pricing<b>${q.basis==="inv"?"Invoice rate":"Net rate"} + ${esc(q.markup)}%</b></div></div>
+    <span class="lbl">Products (${(q.lines||[]).length})</span>
+    <div class="card" style="padding:4px 12px;margin-bottom:12px">${(q.lines||[]).map((l,i)=>`<div style="padding:9px 0;${i?"border-top:1px solid var(--line)":""}">
+      <b style="font-size:14px">${esc(l.desc)}</b>
+      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × ${inr2(l.rate)} <span title="Your rate – not printed">(rate ${inr2(l.base)})</span></span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
+    <div class="qtot">${qTotalsHtml(q.totals||{},q.opts||{},"Price")}</div>
+    ${q.notes?`<p class="small"><b>Note:</b> ${esc(q.notes)}</p>`:""}
+    <div class="row" style="margin-top:14px;gap:8px">
+      <button class="btn pri" id="gvPdf">⬇ Download PDF</button>${navigator.canShare?`<button class="btn" id="gvShare">📤 Share PDF</button>`:""}
+      <button class="btn" id="gvEdit">✏️ Edit</button><button class="btn" id="gvCopy">⧉ Copy as new</button><button class="btn" id="gvDel" style="color:var(--red)">🗑 Delete</button>
+    </div>
+    <span class="lbl">Update status</span><div class="seg" id="gvSt">${Object.keys(Q_STATUS).map(k=>`<button type="button" data-s="${k}" class="${q.status===k?"on":""}">${Q_STATUS[k]}</button>`).join("")}</div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#gvX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
+  $("#gvPdf").onclick=()=>quotePdf(q,false);
+  const sh=$("#gvShare"); if(sh)sh.onclick=()=>quotePdf(q,true);
+  $("#gvEdit").onclick=()=>openGForm(q);
+  $("#gvCopy").onclick=()=>openGForm({...q,id:null,no:null,status:"open",copy:true});
+  $("#gvDel").onclick=async()=>{if(!confirm(`Delete quotation ${q.no}? This can't be undone.`))return;
+    try{await db.doc("gquotes/"+q.id).delete();logAct("admin",`General quotation ${q.no} deleted`);$("#ov").classList.remove("on");docOpen=false;toast("Deleted "+q.no)}catch(x){toast("Couldn't delete ("+(x.code||x.message)+")")}};
+  document.querySelectorAll("#gvSt button").forEach(b=>b.onclick=async()=>{const s=b.dataset.s;if(s===q.status)return;
+    try{await db.doc("gquotes/"+q.id).set({...stripQ(q),status:s,statusAt:Date.now()});toast("Marked "+Q_STATUS[s]);if(s==="accepted")celebrate(true);openGQuote(q.id)}catch(x){toast("Couldn't update ("+(x.code||x.message)+")")}});
+}
+async function openGForm(q){
+  const edit=q&&q.id, v=x=>esc(x==null?"":x), c=q?q.customer:{name:"",address:"",gstin:"",phone:""};
+  gForm={q:edit?q:null,lines:q?JSON.parse(JSON.stringify(q.lines)):[],basis:q?q.basis||"net":"net"};
+  const attn=q&&q.extra&&q.extra[0]?q.extra[0].value:"";
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${edit?"Edit "+esc(q.no):"New general quotation"}</div><div class="small" style="color:#b9cbdd">Price = purchase rate + %</div></div><button class="x" id="gfX">×</button></div>
+  <div class="sheet-b">
+    ${catalog===null||rateMap===null?`<div class="notice info">Loading products and rates…</div>`:!catalog.length?`<div class="notice">${catNote()}</div>`:gNote()?`<div class="notice">${gNote()}</div>`:""}
+    <span class="lbl" style="margin-top:0">Quotation to</span>
+    <input type="text" id="gfName" value="${v(c.name)}" placeholder="Customer / hospital name">
+    <textarea id="gfAddr" style="min-height:58px;margin-top:6px" placeholder="Address">${v(c.address)}</textarea>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:6px">
+      <input type="text" id="gfAttn" value="${v(attn)}" placeholder="Kind attn. (optional)">
+      <input type="tel" id="gfPh" value="${v(c.phone)}" placeholder="Phone">
+      <input type="text" id="gfGst" value="${v(c.gstin)}" placeholder="GSTIN (optional)" style="text-transform:uppercase">
+      <input type="text" id="gfRef" value="${v(q?q.yourRef:"")}" placeholder="Enquiry / ref. no. (optional)">
+    </div>
+    <span class="lbl">Pricing</span>
+    <div class="row" style="gap:10px;align-items:center">
+      <div class="seg" id="gfBasis"><button type="button" data-b="net" class="${gForm.basis==="net"?"on":""}">Net rate</button><button type="button" data-b="inv" class="${gForm.basis==="inv"?"on":""}">Invoice rate</button></div>
+      <label class="small" style="display:flex;gap:6px;align-items:center">+ <input type="tel" inputmode="decimal" id="gfPct" value="${v(q?q.markup:"")}" placeholder="0" style="width:80px"> % on all products</label>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">Net rate = supplier price after discount (your actual cost). Invoice rate = supplier price before discount.</p>
+    <span class="lbl">Products</span>
+    <div style="position:relative"><input type="search" id="gfPick" placeholder="🔍 Search product name or code to add…" autocomplete="off"><div id="gfRes" class="qres" hidden></div></div>
+    <div id="gfLines" style="margin-top:8px"></div>
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:10px"><input type="checkbox" id="gfGstOn" ${q&&q.opts&&q.opts.gstOn===false?"":"checked"}> Add GST (each product's own rate)</label>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:6px">
+      <div><span class="lbl">Quotation date</span><input type="date" id="gfDate" value="${v(edit?q.date:today())}"></div>
+      <div><span class="lbl">Valid until</span><input type="date" id="gfValid" value="${v(edit?q.validUntil:addDays(today(),qCfg().validDays))}"></div>
+    </div>
+    <span class="lbl">Note on the quotation (optional)</span><input type="text" id="gfNotes" value="${v(q?q.notes:"")}" placeholder="Includes installation and training">
+    <div class="card qtot" id="gfTot" style="margin-top:12px"></div>
+    <div class="err" id="gfErr"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px"><button class="btn" id="gfC">Cancel</button><button class="btn" id="gfSave">Save</button><button class="btn pri" id="gfGo">Save &amp; PDF</button></div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  const close=()=>{$("#ov").classList.remove("on");docOpen=false;gForm=null};
+  $("#gfX").onclick=$("#gfC").onclick=close;
+  const H=await loadQuoteLib().catch(()=>null);
+  const pct=()=>+($("#gfPct").value||"").replace(/[^\d.]/g,"")||0;
+  const priced=()=>gForm.lines.map(l=>{const base=gBase(l,gForm.basis)||+l.base||0,price=r2q(base*(1+pct()/100));return {...l,base,mrp:price,rate:price,discPct:0}});
+  const drawTot=()=>{if(!H||!gForm.lines.length){$("#gfTot").innerHTML=`<span class="muted small">Add products to see the total.</span>`;return}
+    const o=gOpts(), ls=priced().map(l=>({...l,...H.calcLine(l,gIntra(),o)}));$("#gfTot").innerHTML=qTotalsHtml(H.calcDoc(ls,gIntra(),"QTN",o),o,"Price")};
+  const drawLines=()=>{const ls=priced();
+    $("#gfLines").innerHTML=ls.length?ls.map((l,i)=>`<div class="card" style="padding:10px 12px;margin-bottom:6px">
+      <div class="row" style="align-items:flex-start;gap:8px"><div class="grow"><b style="font-size:14px">${esc(l.desc)}</b><div class="small muted"><span class="mono">${esc(l.mat)}</span> · rate ${inr2(l.base)} → <b style="color:var(--navy)">price ${inr2(l.rate)}</b>${l.gstRate?` · GST ${l.gstRate}%`:""}</div></div>
+      <button type="button" class="btn sm" data-gx="${i}" title="Remove">✕</button></div>
+      <div class="row" style="gap:8px;margin-top:6px"><span class="small muted">Qty</span>
+      <button type="button" class="btn sm" data-gm="${i}">−</button><input type="tel" inputmode="numeric" data-gq="${i}" value="${esc(l.qty)}" style="max-width:64px;text-align:center"><button type="button" class="btn sm" data-gp="${i}">+</button>
+      <span class="grow"></span><b>${inr2(r2q(l.qty*l.rate))}</b></div></div>`).join(""):`<div class="small muted">No products yet — search above to add.</div>`;
+    document.querySelectorAll("[data-gx]").forEach(b=>b.onclick=()=>{gForm.lines.splice(+b.dataset.gx,1);drawLines()});
+    document.querySelectorAll("[data-gm]").forEach(b=>b.onclick=()=>{const l=gForm.lines[+b.dataset.gm];l.qty=Math.max(1,(+l.qty||1)-1);drawLines()});
+    document.querySelectorAll("[data-gp]").forEach(b=>b.onclick=()=>{const l=gForm.lines[+b.dataset.gp];l.qty=(+l.qty||0)+1;drawLines()});
+    document.querySelectorAll("[data-gq]").forEach(x=>x.oninput=()=>{gForm.lines[+x.dataset.gq].qty=+x.value.replace(/\D/g,"")||0;drawTot()});
+    drawTot()};
+  const pick=$("#gfPick"),res=$("#gfRes");
+  const drawRes=()=>{const s=pick.value.trim().toLowerCase(); if(!s||!catalog){res.hidden=true;return}
+    const w=s.split(/\s+/), hits=catalog.filter(p=>{const t=(p.desc+" "+p.mat+" "+(p.div||"")).toLowerCase();return w.every(x=>t.includes(x))}).slice(0,40);
+    res.hidden=false;
+    res.innerHTML=hits.length?hits.map(p=>{const b=gBase(p,gForm.basis);return `<div class="qhit" data-gh="${esc(p.mat)}" style="${b?"":"opacity:.55"}"><b>${esc(p.desc)}</b><div class="small muted"><span class="mono">${esc(p.mat)}</span> · ${b?`<b style="color:var(--navy)">${gForm.basis==="inv"?"Invoice":"Net"} rate ${inr2(b)}</b>`:`<span style="color:var(--red)">no rate in inventory</span>`} · MRP ${inr2(p.mrp)}</div></div>`}).join(""):`<div class="small muted" style="padding:10px">No product matches “${esc(s)}”.</div>`;
+    res.querySelectorAll("[data-gh]").forEach(x=>x.onclick=()=>{const p=catalog.find(z=>z.mat===x.dataset.gh);if(!p)return;
+      if(!gBase(p,gForm.basis)){toast("This product has no purchase rate in the inventory");return}
+      const ex=gForm.lines.find(l=>l.mat===p.mat); if(ex)ex.qty=(+ex.qty||0)+1;
+      else gForm.lines.push({mat:p.mat,pid:p.mat,desc:p.desc,hsn:p.hsn||"",uom:p.uom||"",qty:1,gstRate:+p.gst||0,discPct:0,remarks:""});
+      pick.value="";res.hidden=true;drawLines();toast("Added: "+p.desc.slice(0,40))})};
+  pick.oninput=drawRes; pick.onfocus=drawRes;
+  document.querySelectorAll("#gfBasis button").forEach(b=>b.onclick=()=>{gForm.basis=b.dataset.b;document.querySelectorAll("#gfBasis button").forEach(x=>x.classList.toggle("on",x===b));drawLines();drawRes()});
+  ["gfPct","gfGstOn","gfGst"].forEach(id=>{const x=$("#"+id);x.oninput=x.onchange=()=>id==="gfPct"?drawLines():drawTot()});
+  drawLines();
+  $("#gfSave").onclick=()=>saveGQuote(false,priced,pct);
+  $("#gfGo").onclick=()=>saveGQuote(true,priced,pct);
+}
+function gOpts(){return $("#gfGstOn").checked?{hospOn:false,hospPct:"",surgOn:false,surgPct:""}:{hospOn:false,hospPct:"",surgOn:false,surgPct:"",gstOn:false,gstPct:""}}
+function gIntra(){const g=($("#gfGst")?.value||"").trim();const s=g?g.slice(0,2):"33";return !s||s==="33"}
+async function saveGQuote(withPdf,priced,pct){
+  const F=gForm, err=$("#gfErr"); err.textContent="";
+  let H; try{H=await loadQuoteLib()}catch(x){return err.textContent="Couldn't load the quotation module. Check your internet and try again."}
+  const name=$("#gfName").value.trim(); if(!name)return err.textContent="Enter the customer name.";
+  if(!F.lines.length)return err.textContent="Add at least one product.";
+  if(F.lines.some(l=>!(+l.qty>0)))return err.textContent="Every product needs a quantity of at least 1.";
+  const ls0=priced(); if(ls0.some(l=>!(l.base>0)))return err.textContent="One product has no purchase rate. Remove it or pick the other rate type.";
+  const gst=$("#gfGst").value.trim().toUpperCase();
+  if(gst&&!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst))return err.textContent="The GSTIN doesn't look right (15 characters). Fix it or leave it blank.";
+  const date=$("#gfDate").value||today(), valid=$("#gfValid").value||addDays(date,qCfg().validDays);
+  if(valid<date)return err.textContent="'Valid until' is before the quotation date.";
+  const o=gOpts(), intra=gIntra(), lines=ls0.map(l=>({...l,qty:+l.qty,...H.calcLine({...l,qty:+l.qty},intra,o)})), totals=H.calcDoc(lines,intra,"QTN",o);
+  const sc=gst?gst.slice(0,2):"33", attn=$("#gfAttn").value.trim();
+  const base={type:"QTN",general:true,priceLabel:"Price",basis:F.basis,markup:pct(),date,validUntil:valid,yourRef:$("#gfRef").value.trim(),preparedBy:"Dr. Han Healthcare",
+    customer:{name,address:$("#gfAddr").value.trim(),gstin:gst,stateCode:sc,stateName:H.STATES[sc]||"",dl:"",phone:$("#gfPh").value.trim()},intra,extra:attn?[{label:"Kind Attn.",value:attn}]:[],
+    notes:$("#gfNotes").value.trim(),lines,totals,opts:o,company:qCompany(),updatedAt:Date.now()};
+  const b1=$("#gfGo"),b2=$("#gfSave"); b1.disabled=b2.disabled=true; (withPdf?b1:b2).textContent="Saving…";
+  try{
+    let rec;
+    if(F.q){rec={...stripQ(F.q),...base,no:F.q.no,fy:F.q.fy,seq:F.q.seq,status:F.q.status,createdAt:F.q.createdAt};await db.doc("gquotes/"+F.q.id).set(rec);rec.id=F.q.id}
+    else{const fy=H.fyOf(date);let seq=gquotes.filter(x=>x.fy===fy).reduce((m,x)=>Math.max(m,+x.seq||0),0)+1,id;
+      for(let k=0;k<30;k++){id=`GEN_${fy}_${String(seq).padStart(4,"0")}`;const s=await db.doc("gquotes/"+id).get();if(!s.exists)break;seq++}
+      rec={...base,no:`DHH/QTN/GEN/${fy}/${String(seq).padStart(4,"0")}`,fy,seq,status:"open",createdAt:Date.now(),createdBy:actor().id};
+      await db.doc("gquotes/"+id).set(rec);rec.id=id;if(!gquotes.some(x=>x.id===id))gquotes=[rec,...gquotes]}
+    logAct("admin",`General quotation ${rec.no} – ${name} – ${inr(totals.grand)}`);
+    $("#ov").classList.remove("on");docOpen=false;gForm=null;toast((F.q?"Updated ":"Saved ")+rec.no+" ✓");
+    if(withPdf)await quotePdf(rec,false);
+    render();
+  }catch(x){b1.disabled=b2.disabled=false;b1.textContent="Save & PDF";b2.textContent="Save";err.textContent="Couldn't save ("+(x.code||x.message)+")"+(/invalid_argument|permission/i.test(x.code||x.message||"")?" – update the Firestore rules.":"")}
+}
+function exportGQuotes(){
+  if(!gquotes.length)return toast("No quotations to export"); if(!window.XLSX)return toast("Excel library didn't load");
+  const rows=[];
+  for(const q of gquotes.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)))for(const l of (q.lines||[]))rows.push({"Quotation no.":q.no,"Date":q.date,"Valid until":q.validUntil,"Status":Q_STATUS[q.status]||q.status,
+    "Customer":q.customer?.name,"Product code":l.mat,"Product":l.desc,"Qty":l.qty,"Rate basis":q.basis==="inv"?"Invoice rate":"Net rate","Rate (₹)":l.base,"Markup %":q.markup,"Price (₹)":l.rate,
+    "Line total incl. GST (₹)":l.total,"Quotation grand total (₹)":q.totals?.grand});
+  const wb=XLSX.utils.book_new(),ws=XLSX.utils.json_to_sheet(rows);ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.max(10,Math.min(42,k.length+4))}));
+  XLSX.utils.book_append_sheet(wb,ws,"General quotations");save(`HAN_General_Quotations_${today()}.xlsx`,new Blob([XLSX.write(wb,{bookType:"xlsx",type:"array"})]));
 }
 
 </script>
