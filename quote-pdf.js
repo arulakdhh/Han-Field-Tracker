@@ -103,7 +103,7 @@ function buildPdf(d) {
   const docDisc = O.hospOn || O.surgOn; const hasGst = r2((t.cgst || 0) + (t.sgst || 0) + (t.igst || 0)) > 0;
   const showRate = d.type !== "PO" && d.lines.some(l => r2(l.rate) !== r2(l.mrp)); const showLineDisc = d.lines.some(l => l.discPct);
   const rates = [...new Set(d.lines.map(l => l.gstRate))]; const gstLbl = rates.length === 1 ? ` ${n2(rates[0]).replace(/\.00$/, "")}%` : "";
-  const isPO = d.type === "PO"; const cols = [["S.No", 11, "c"], [isPO ? "Material Code" : (d.codeLabel || "DHH PID"), (isPO || d.codeLabel) ? 26 : 19, "c"], ["Product Name", 0, "l"], [isPO ? "Rate (₹)" : "MRP (₹)", 22, "r"]];
+  const isPO = d.type === "PO"; const cols = [["S.No", 11, "c"], [isPO ? "Material Code" : (d.codeLabel || "DHH PID"), (isPO || d.codeLabel) ? 26 : 19, "c"], ["Product Name", 0, "l"], [isPO ? "Rate (₹)" : (d.priceLabel ? d.priceLabel + " (₹)" : "MRP (₹)"), 22, "r"]];
   if (showRate) cols.push(["Rate (₹)", 21, "r"]);
   cols.push(["Quantity", 17, "c"]); if (showLineDisc) cols.push(["Disc %", 13, "r"]);
   cols.push(["Total Quantity Amount", 25, "r"]);
@@ -126,10 +126,10 @@ function buildPdf(d) {
       ls.forEach((ln, k) => { const isMain = k < mainLeft; doc.setFont("FreeSans", isMain ? "bold" : "normal"); doc.setFontSize(isMain ? 8.2 : 7); setC(isMain ? INK : GREY); doc.text(ln, c.cell.x + 2, yy); yy += isMain ? 3.5 : 3.1; }); } } });
   y = doc.lastAutoTable.finalY + 2;
   doc.setFont("FreeSans", "italic"); doc.setFontSize(7.2); setC(GREY);
-  doc.text(`Total Quantity Amount = ${showRate || isPO ? "Rate" : "MRP"} × Quantity${showLineDisc ? " − discount" : ""}.${hasGst ? ` Total Amount includes GST${rates.length === 1 ? " @" + gstLbl : ""}${docDisc ? " after the discounts below" : ""}.` : ""}`, M, y + 2); y += 7;
+  doc.text(`Total Quantity Amount = ${showRate || isPO ? "Rate" : (d.priceLabel || "MRP")} × Quantity${showLineDisc ? " − discount" : ""}.${hasGst ? ` Total Amount includes GST${rates.length === 1 ? " @" + gstLbl : ""}${docDisc ? " after the discounts below" : ""}.` : ""}`, M, y + 2); y += 7;
   // totals box
   if (y > 225) { doc.addPage(); y = 18; }
-  const rows = [[`Gross Value (${showRate || isPO ? "Rate" : "MRP"} × Qty)`, "₹ " + n2(t.amount ?? t.taxable)]];
+  const rows = [[`Gross Value (${showRate || isPO ? "Rate" : (d.priceLabel || "MRP")} × Qty)`, "₹ " + n2(t.amount ?? t.taxable)]];
   if (O.hospOn) rows.push([`Less: Hospital Discount @ ${n2(O.hospPct).replace(/\.00$/, "")}%`, "− ₹ " + n2(t.hospDisc)]);
   if (O.surgOn) rows.push([`Less: Surgeon Discount @ ${n2(O.surgPct).replace(/\.00$/, "")}%`, "− ₹ " + n2(t.surgDisc)]);
   if (docDisc) rows.push(["Taxable Value", "₹ " + n2(t.taxable)]);
