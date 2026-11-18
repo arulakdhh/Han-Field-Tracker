@@ -2269,7 +2269,7 @@ function loadQuoteLib(){
 function qCompany(){
   const c={...(catCo||{})}; delete c.logo; delete c.updatedAt; return c;
 }
-function qForPdf(q){const d=JSON.parse(JSON.stringify(q));d.company={...(d.company||{})};if(catCo&&catCo.logo)d.company.logo=catCo.logo;d.codeLabel="Product Code";return d}
+function qForPdf(q){const d=JSON.parse(JSON.stringify(q));d.company={...(d.company||{})};if(catCo&&catCo.logo)d.company.logo=catCo.logo;d.codeLabel="Product Code";d.exGst=true;return d}
 async function quotePdf(q,share){
   try{
     const H=await loadQuoteLib(); if(!window.jspdf)throw new Error("PDF library didn't load");

@@ -99,7 +99,7 @@
     document.getElementById("fqSt").onchange = e => { fqFilt.st = e.target.value; renderFieldQ(); };
     const qi = document.getElementById("fqQ"); qi.oninput = e => { fqFilt.q = e.target.value; clearTimeout(renderFieldQ._t); renderFieldQ._t = setTimeout(() => { renderFieldQ(); const x = document.getElementById("fqQ"); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 250); };
     el.querySelectorAll("[data-fqpdf]").forEach(b => b.onclick = async () => {
-      const d = JSON.parse(JSON.stringify(fq[b.dataset.fqpdf])); d.company = { ...DEFAULT_COMPANY, ...S.company, ...(d.company || {}) }; if (S.company && S.company.logo) d.company.logo = S.company.logo; d.codeLabel = "Product Code";
+      const d = JSON.parse(JSON.stringify(fq[b.dataset.fqpdf])); d.company = { ...DEFAULT_COMPANY, ...S.company, ...(d.company || {}) }; if (S.company && S.company.logo) d.company.logo = S.company.logo; d.codeLabel = "Product Code"; d.exGst = true;
       try { const pdf = buildPdf(d); await save(d.no.replace(/\//g, "-") + ".pdf", new Uint8Array(pdf.output("arraybuffer"))); } catch (e) { msg($("globalmsg"), "bad", "Couldn't make the PDF: " + (e.message || e)); }
     });
     el.querySelectorAll("[data-fqst]").forEach(sl => sl.onchange = async () => {
