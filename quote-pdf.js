@@ -107,16 +107,16 @@ function buildPdf(d) {
   if (showRate) cols.push(["Rate (₹)", 21, "r"]);
   cols.push(["Quantity", 17, "c"]); if (showLineDisc) cols.push(["Disc %", 13, "r"]);
   const exG = !!d.exGst && hasGst;   // field-app quotations: last column shows the amount before GST
-  if (!exG || docDisc) cols.push(["Total Quantity Amount", 25, "r"]);
-  if (exG) cols.push([`Total Amount (₹) excl. GST${gstLbl}`, 30, "r"]);
+  cols.push(["Total Quantity Amount", 25, "r"]);
+  if (exG) { }   // field-app quotations: no GST column — GST is shown only in the totals box
   else if (hasGst) cols.push([`Total Amount (₹) incl. GST${gstLbl}`, 30, "r"]);
   const fixed = cols.reduce((a, c) => a + c[1], 0); cols[2][1] = W - 2 * M - fixed;
   const body = d.lines.map((l, i) => {
     const sub = [l.batch ? "Batch " + l.batch : "", l.serial ? "S/N " + l.serial : "", l.exp ? "Exp " + l.exp : "", l.hsn ? "HSN " + l.hsn : ""].filter(Boolean).join(" · ") + (l.remarks ? "\n" + l.remarks : "");
     const row = [i + 1, { content: (isPO ? l.mat : l.pid) || "—", styles: { fontStyle: "bold", textColor: DARK, fontSize: (isPO || d.codeLabel) ? 7 : 8.2 } }, { content: l.desc + (sub ? "\n" + sub : ""), _main: l.desc }, n2(isPO ? l.rate : l.mrp)];
     if (showRate) row.push(n2(l.rate)); row.push(l.qty); if (showLineDisc) row.push(n2(l.discPct));
-    if (!exG || docDisc) row.push(n2(l.amount ?? l.taxable));
-    if (exG) row.push({ content: n2(l.taxable), styles: { fontStyle: "bold" } });
+    row.push(exG ? { content: n2(l.amount ?? l.taxable), styles: { fontStyle: "bold" } } : n2(l.amount ?? l.taxable));
+    if (exG) { }
     else if (hasGst) row.push({ content: n2(l.total), styles: { fontStyle: "bold" } });
     return row; });
   doc.autoTable({ startY: y, margin: { left: M, right: M }, theme: "grid", head: [cols.map(c => c[0])], body,
@@ -130,7 +130,7 @@ function buildPdf(d) {
   y = doc.lastAutoTable.finalY + 2;
   doc.setFont("FreeSans", "italic"); doc.setFontSize(7.2); setC(GREY);
   const pl = showRate || isPO ? "Rate" : (d.priceLabel || "MRP");
-  doc.text(exG ? `Total Amount = ${pl} × Quantity${docDisc ? " − hospital / surgeon discount" : ""}, excluding GST. GST${rates.length === 1 ? " @" + gstLbl : ""} is added in the totals below.`
+  doc.text(exG ? `Total Quantity Amount = ${pl} × Quantity.${docDisc ? " Hospital / surgeon discount and" : ""} GST${rates.length === 1 ? " @" + gstLbl : ""} ${docDisc ? "are" : "is"} applied in the totals below.`
     : `Total Quantity Amount = ${pl} × Quantity${showLineDisc ? " − discount" : ""}.${hasGst ? ` Total Amount includes GST${rates.length === 1 ? " @" + gstLbl : ""}${docDisc ? " after the discounts below" : ""}.` : ""}`, M, y + 2); y += 7;
   // totals box
   if (y > 225) { doc.addPage(); y = 18; }
