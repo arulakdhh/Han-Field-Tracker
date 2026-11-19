@@ -1,32 +1,49 @@
-DR. HAN – QUOTATIONS + INVENTORY ON FIREBASE  (update steps)
-=============================================================
+DR. HAN FIELD APP + INVENTORY – COMPLETE UPDATE STEPS (19 Nov 2026)
+=====================================================================
+Includes: executive quotations (Rate + %), General Quotations (admin creates, executives
+view + change discount), PDF without GST column, floating-icon login, mobile header,
+inventory on Firebase with live product list + rates.
 
-1. GITHUB (your drhanfield repo)
-   a. Replace: index.html, firebase-runtime.js
-   b. Add new file: quote-pdf.js
-   c. Add the whole "inventory" folder (10 files): Add file → Upload files → drag the folder in.
-   Netlify redeploys in about a minute.
+STEP 1 – FIND YOUR FIREBASE PROJECT
+  Open drhanfield.netlify.app/firebase-config.js → note projectId: "...".
+  Use ONLY that project in every Firebase step below.
 
-2. FIREBASE → Firestore Database → Rules
-   Paste the whole firestore.rules file → Publish.
+STEP 2 – GITHUB: MAIN FOLDER (replace / add)
+  index.html  ·  firebase-runtime.js  ·  quote-pdf.js
+  Do NOT touch firebase-config.js.
 
-3. FIREBASE → Authentication
-   a. Sign-in method → Add new provider → Google → Enable → pick your support email → Save.
-   b. Settings → Authorized domains → Add domain → drhanfield.netlify.app
+STEP 3 – GITHUB: "inventory" FOLDER (create if missing; replace / add all 10)
+  index.html · ops.js · sales.js · parser.js · inv-firebase.js · inv-field.js
+  jspdf.umd.min.js · jspdf.plugin.autotable.min.js · pdf.min.js · pdf.worker.min.js
+  Commit → wait ~1 minute for Netlify.
 
-4. MOVE YOUR INVENTORY DATA (one time)
-   a. Old register on claude.ai → Admin panel → Export & backup → Download backup (.json).
-   b. Open https://drhanfield.netlify.app/inventory/ → log in with User ID ADMIN + your admin password.
-   c. Admin panel → Export & backup → Restore → choose the .json file. Wait for "Restored … records".
-   From now on use only the new register; the claude.ai copy no longer updates.
+STEP 4 – FIREBASE RULES
+  Firebase console → (your project) → Firestore Database → Rules
+  → select all, delete → paste the whole firestore.rules file → Publish → wait 30 s.
 
-5. OFFICE STAFF (optional)
-   Inventory → Admin panel → Users & access → add their Gmail address and choose their panels.
-   They open /inventory/ and tap "Sign in with Google".
+STEP 5 – FIREBASE SIGN-IN (one time; skip if done)
+  Authentication → Sign-in method → Google → Enable → Save.
+  Authentication → Settings → Authorized domains → add drhanfield.netlify.app
 
-6. FIELD APP → Setup → Quotations
-   Set the maximum discount % executives may give and the validity days → Save.
+STEP 6 – INVENTORY
+  Open drhanfield.netlify.app/inventory/ → Ctrl + F5 → log in ADMIN + admin password.
+  First time only: Admin panel → Export & backup → Restore → your backup .json.
+  Sell Order → Field quotations → "Send product list now"
+  → must show ✅ with no red text.
 
-7. TEST
-   Log in as an executive → open a doctor → 📄 New quotation → add a product → Save & PDF.
-   Inventory → Sell Order → Field quotations shows it.
+STEP 7 – FIELD APP
+  Open drhanfield.netlify.app → Ctrl + F5 → log in ADMIN.
+  Setup → Quotations → set "valid for (days)" → Save.
+  General Quotations → "Products with rates" shows a number (not 0).
+
+STEP 8 – TEST
+  Admin:     General Quotations → + New quotation → customer, tick Add %, products,
+             discount → Save & PDF.
+  Executive: Quotations → doctor → New quotation → Add % → products → Save & PDF.
+             General Quotations → open the admin's quotation → % Edit discount → Save.
+  Inventory: Sell Order → Field quotations shows the executive's quotation.
+
+IF SOMETHING FAILS
+  "Can't read … Firestore rules"  → Step 4 in the correct project (Step 1), then Ctrl + F5.
+  "No product list / no rates"    → Step 6 "Send product list now".
+  Old screens / buttons missing   → Ctrl + F5 (phones: close and reopen Chrome).

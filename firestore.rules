@@ -26,7 +26,6 @@ service cloud.firestore {
     function invDoc()   { return get(/databases/$(database)/documents/inv/main/users/$(myEmail())); }
     function invStaff() { return signedIn() && (isAdmin() || (exists(/databases/$(database)/documents/inv/main/users/$(myEmail())) && invDoc().data.get('active', true) != false)); }
     function invAdmin() { return signedIn() && (isAdmin() || (invStaff() && invDoc().data.get('isAdmin', false) == true)); }
-    function maxDisc()  { return get(/databases/$(database)/documents/config/master).data.get('quote', {}).get('maxDisc', 10); }
 
     // Executive IDs + names for the login screen (no passwords)
     match /public/{doc}     { allow read: if true;        allow write: if isAdmin(); }
@@ -75,12 +74,24 @@ service cloud.firestore {
       allow read:  if isMember() || invStaff();
       allow write: if invStaff();
     }
-    // Field quotations: each executive creates and edits only their own; discount within the admin's limit
+    // Product rates (used by executive and general quotations)
+    match /rates/{doc} {
+      allow read:  if isMember() || invStaff();
+      allow write: if invStaff();
+    }
+    // General quotations (any customer, rate + %): ADMIN creates; executives view and may change only the discount
+    match /gquotes/{id} {
+      allow read:  if isMember();
+      allow write: if isAdmin();
+      allow update: if isMember() && request.resource.data.diff(resource.data).affectedKeys()
+                      .hasOnly(['opts','lines','totals','discEff','discountBy','discountAt','updatedAt']);
+    }
+    // Field quotations: each executive creates and edits only their own
     match /fquotes/{id} {
       allow read:   if isAdmin() || invStaff() || (resource == null && isMember()) || (resource.data.exec == myExec() && isExec(myExec()));
-      allow create: if isAdmin() || (isExec(request.resource.data.exec) && request.resource.data.discEff <= maxDisc());
+      allow create: if isAdmin() || isExec(request.resource.data.exec);
       allow update: if isAdmin() || invStaff()
-                    || (isExec(resource.data.exec) && request.resource.data.exec == resource.data.exec && request.resource.data.discEff <= maxDisc());
+                    || (isExec(resource.data.exec) && request.resource.data.exec == resource.data.exec);
       allow delete: if isAdmin();
     }
   }

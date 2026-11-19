@@ -258,7 +258,7 @@ textarea{width:100%;min-height:120px;font-family:var(--font-mono);font-size:12px
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="../firebase-config.js"></script>
-<script src="inv-firebase.js"></script>
+<script src="inv-firebase.js?v=20261118"></script>
 <script src="pdf.min.js"></script>
 <script src="parser.js"></script>
 <script src="jspdf.umd.min.js"></script>
@@ -789,8 +789,8 @@ render();
   db.collection("presets").onSnapshot(s=>{ S.presets=s.docs.map(d=>({id:d.id,...d.data()})); renderColPanel(); }, ()=>{});
 })();
 </script>
-<script src="sales.js"></script>
-<script src="ops.js"></script>
-<script src="inv-field.js"></script>
+<script src="sales.js?v=20261118"></script>
+<script src="ops.js?v=20261118"></script>
+<script src="inv-field.js?v=20261118"></script>
 </body>
 </html>

@@ -38,7 +38,7 @@
     const co = companyCard();
     const rates = rateList();
     const sig = hash(JSON.stringify(list) + "|" + JSON.stringify(co) + "|" + JSON.stringify(rates));
-    if (!force && (sig === lastSig || sig === remoteSig)) { lastSig = sig; return setPub(`Product list in the field app is up to date: <b>${list.length}</b> products (MRP, GST, HSN only — purchase rates are never shared).`); }
+    if (!force && (sig === lastSig || sig === remoteSig)) { lastSig = sig; return setPub(`Product list in the field app is up to date: <b>${list.length}</b> products (with Rate, MRP, GST and HSN).`); }
     try {
       await fsx().doc("catalog/company").set({ ...co, updatedAt: new Date().toISOString() });
       await fsx().doc("catalog/products").set({ list, count: list.length, sig, updatedAt: new Date().toISOString(), by: S.myEmail || "" });
@@ -81,7 +81,7 @@
       (!q || [d.no, d.doctor, d.customer && d.customer.name, ...(d.lines || []).map(l => l.desc + " " + l.mat)].join(" ").toLowerCase().includes(q)));
     const sum = a => a.reduce((x, d) => x + (+(d.totals && d.totals.grand) || 0), 0);
     el.innerHTML = `<div class="panel pad"><h2 style="margin:0 0 4px">Field quotations</h2>
-      <p class="note" style="margin:0">Quotations made by field executives in the Field Sales app. They use this register's product list and MRP, and print in the same format. They don't change stock. To bill, make a sales order, challan or invoice here as usual.</p>
+      <p class="note" style="margin:0">Quotations made by field executives in the Field Sales app. They use this register's product list and Rate, and print in the same format. They don't change stock. To bill, make a sales order, challan or invoice here as usual.</p>
       <div class="row" style="margin-top:8px;gap:10px;align-items:center"><button class="btn" id="fqSend">Send product list now</button><span class="note" id="fqPub">${pubState}</span></div></div>
     <div class="panel"><div class="toolbar">
       <select id="fqExec"><option value="">All executives</option>${execs.map(([id, nm]) => `<option value="${esc(id)}" ${fqFilt.exec === id ? "selected" : ""}>${esc(id)} · ${esc(nm)}</option>`).join("")}</select>

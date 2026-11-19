@@ -433,7 +433,7 @@ function fixMe(){
 $("#execSel").addEventListener("change",e=>{me=e.target.value;try{localStorage.setItem("han_exec",me)}catch(_){};render()});
 
 /* ---------- routing ---------- */
-const ADMIN_VIEWS=["gquotes","briefings","reports","activity","convert","setup"];
+const ADMIN_VIEWS=["briefings","reports","activity","convert","setup"];
 function route(){syncRole();const h=(location.hash||"").slice(1);view=["visits","followups","orders","quotes","gquotes","help","briefings","reports","activity","convert","setup"].includes(h)?h:"visits";if(!canAdmin&&ADMIN_VIEWS.includes(view))view="visits";render()}
 window.addEventListener("hashchange",route);
 
@@ -1684,9 +1684,10 @@ function helpBody(){
     <li>Fill what each stage asks: quotation no., signed date, PO number, delivery date, amount received.</li>
     <li>If the doctor drops it, tap <b>Lost</b> and choose why.</li></ol>
     <p style="margin:8px 0 0"><b>My Orders</b> shows your open pipeline, orders won, deliveries and payment pending.</p>`)+
-  s("7. Making a quotation",`<p style="margin:0 0 6px">Products and MRP come straight from the company inventory, so prices are always current.</p><ol style="margin:0;padding-left:20px">
+  s("7. Making a quotation",`<p style="margin:0 0 6px">Products and their Rate come straight from the company inventory, so prices are always current.</p><ol style="margin:0;padding-left:20px">
     <li>Open the doctor → <b>📄 New quotation</b> (or <b>Quotations</b> tab → <b>+ New quotation</b>).</li>
     <li>Check the hospital name and address. Add GSTIN if the hospital has one.</li>
+    <li>Tick <b>Add % on all products</b> and type your % — each product's price = its Rate + that %.</li>
     <li>Search a product by name or code and tap it to add. Set the quantity with <b>−</b> / <b>+</b>.</li>
     <li>Add a hospital or surgeon discount if agreed. <b>Add GST</b> is on by default.</li>
     <li>Tap <b>Save &amp; PDF</b>. The quotation gets its number (e.g. DHH/QTN/DHH01/26-27/0001) and the PDF downloads. On a phone, open it and tap <b>📤 Share PDF</b> to send it on WhatsApp.</li></ol>
@@ -2237,7 +2238,7 @@ function confirmBox(text,yes,label){
 
 /* =========================================================
    QUOTATIONS – executives quote products from the inventory
-   Products: catalog/products (published live by the Implant Product Register, MRP only)
+   Products: catalog/products + rates/products (published live by the Implant Product Register)
    Quotations: fquotes/<EXEC>_<FY>_<SEQ>   number DHH/QTN/<EXEC>/<FY>/<SEQ>
    PDF: quote-pdf.js (same format as the inventory quotation)
    ========================================================= */
@@ -2253,6 +2254,8 @@ function startQuoteSubs(){
   const rer=()=>{if(view==="quotes"&&!qForm)render()};
   db.doc("catalog/products").onSnapshot(s=>{const d=s.exists?s.data():null;catErr=d?"":"missing";catalog=(d&&d.list)||[];catAt=(d&&d.updatedAt)||"";rer()},e=>{catErr=/invalid_argument|permission/i.test((e&&(e.code||e.message))||"")?"denied":"error:"+((e&&(e.code||e.message))||"");catalog=[];rer()});
   db.doc("catalog/company").onSnapshot(s=>{catCo=s.exists?s.data():null},()=>{});
+  db.doc("rates/products").onSnapshot(s=>{const d=s.exists?s.data():null;rateErr=d?"":"missing";rateMap={};((d&&d.list)||[]).forEach(r=>rateMap[r.mat]=r);rer();if(view==="gquotes"&&!gForm)render()},
+    e=>{rateErr=/invalid_argument|permission/i.test((e&&(e.code||e.message))||"")?"denied":"error";rateMap={};rer();if(view==="gquotes"&&!gForm)render()});
   const all=canAdmin||realAdmin;
   const q=all?db.collection("fquotes"):db.collection("fquotes").where("exec","==",session);
   q.onSnapshot(s=>{quotes=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));qLoaded=true;rer()},()=>{qLoaded=true;rer()});
@@ -2263,7 +2266,7 @@ function loadQuoteLib(){
   if(window.HanQuote&&window.jspdf)return Promise.resolve(window.HanQuote);
   if(qLib)return qLib;
   const add=src=>new Promise((ok,no)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>no(new Error("Couldn't load "+src));document.head.appendChild(s)});
-  qLib=(window.HanQuote?Promise.resolve():add("quote-pdf.js")).then(()=>{if(!window.HanQuote)throw new Error("Quotation module missing");return window.HanQuote}).catch(e=>{qLib=null;throw e});
+  qLib=(window.HanQuote?Promise.resolve():add("quote-pdf.js?v=20261118")).then(()=>{if(!window.HanQuote)throw new Error("Quotation module missing");return window.HanQuote}).catch(e=>{qLib=null;throw e});
   return qLib;
 }
 function qCompany(){
@@ -2353,8 +2356,8 @@ function openQuote(id){
     <span class="lbl">Products (${(q.lines||[]).length})</span>
     <div class="card" style="padding:4px 12px;margin-bottom:12px">${(q.lines||[]).map((l,i)=>`<div style="padding:9px 0;${i?"border-top:1px solid var(--line)":""}">
       <b style="font-size:14px">${esc(l.desc)}</b>
-      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × MRP ${inr2(l.mrp)}</span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
-    <div class="qtot">${qTotalsHtml(t,q.opts||{})}</div>
+      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × ${q.priceLabel?"":"MRP "}${inr2(l.mrp)}${l.base?` (rate ${inr2(l.base)}${+q.markup?` + ${esc(q.markup)}%`:""})`:""}</span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
+    <div class="qtot">${qTotalsHtml(t,q.opts||{},q.priceLabel)}</div>
     ${q.notes?`<p class="small"><b>Note:</b> ${esc(q.notes)}</p>`:""}
     <div class="row" style="margin-top:14px;gap:8px">
       <button class="btn pri" id="qvPdf">⬇ Download PDF</button>
@@ -2395,12 +2398,12 @@ async function openQuoteForm(q,docId){
   const e=q?(execById(q.exec)||{id:q.exec,name:q.execName}):row.exec, d=q?{id:q.doctorId,doctor:q.doctor,hospital:q.hospital,area:q.area,...(row?row.doc:{})}:row.doc;
   const cfg=qCfg();
   const vu=addDays(today(),cfg.validDays);
-  qForm={q,e,d,lines:q?JSON.parse(JSON.stringify(q.lines)):[],opts:q?{...q.opts}:{hospOn:false,hospPct:"",surgOn:false,surgPct:""},gst:q?!("gstOn" in (q.opts||{})&&!q.opts.gstOn):true,pick:""};
+  qForm={q,e,d,markup:q?(+q.markup||0):0,lines:q?JSON.parse(JSON.stringify(q.lines)):[],opts:q?{...q.opts}:{hospOn:false,hospPct:"",surgOn:false,surgPct:""},gst:q?!("gstOn" in (q.opts||{})&&!q.opts.gstOn):true,pick:""};
   const c=q?q.customer:{name:d.hospital||"",address:[d.address,d.area].filter(Boolean).join("\n")||"",gstin:"",phone:d.phone||""};
   const v=x=>esc(x==null?"":x);
   $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${q?"Edit "+esc(q.no):"New quotation"} · ${esc(d.doctor)}</div><div class="small" style="color:#b9cbdd">${esc(d.hospital)}${canAdmin?" · "+esc(e.name):""}</div></div><button class="x" id="qfX">×</button></div>
   <div class="sheet-b">
-    ${catalog===null?`<div class="notice info">Loading the product list…</div>`:!catalog.length?`<div class="notice">${catNote()}</div>`:""}
+    ${catalog===null||rateMap===null?`<div class="notice info">Loading the product list…</div>`:!catalog.length?`<div class="notice">${catNote()}</div>`:gNote()?`<div class="notice">${gNote()}</div>`:""}
     <span class="lbl" style="margin-top:0">Quotation to</span>
     <input type="text" id="qfName" value="${v(c.name)}" placeholder="Hospital / clinic name">
     <textarea id="qfAddr" style="min-height:58px;margin-top:6px" placeholder="Address">${v(c.address)}</textarea>
@@ -2408,6 +2411,12 @@ async function openQuoteForm(q,docId){
       <input type="tel" id="qfPh" value="${v(c.phone)}" placeholder="Phone">
       <input type="text" id="qfGst" value="${v(c.gstin)}" placeholder="GSTIN (optional)" style="text-transform:uppercase">
       <input type="text" id="qfRef" value="${v(q?q.yourRef:"")}" placeholder="Enquiry / ref. no. (optional)">
+    </div>
+    <span class="lbl">Pricing</span>
+    <p class="small muted" style="margin:0 0 6px">Each product's price starts from its <b>Rate</b> in the inventory.</p>
+    <div class="row" style="gap:10px;align-items:center">
+      <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="qfPctOn" ${qForm.markup?"checked":""}> Add % on all products</label>
+      <input type="tel" inputmode="decimal" id="qfPct" value="${qForm.markup?v(qForm.markup):""}" placeholder="0" style="width:90px"><span class="small muted">%</span>
     </div>
     <span class="lbl">Products</span>
     <div style="position:relative"><input type="search" id="qfPick" placeholder="🔍 Search product name or code to add…" autocomplete="off">
@@ -2438,17 +2447,17 @@ async function openQuoteForm(q,docId){
   const calc=()=>{
     const o=qOpts();
     if(!H)return {t:null,o};
-    const lines=qForm.lines.map(l=>({...l,...H.calcLine(l,qIntra(),o)}));
+    const lines=qPriced().map(l=>({...l,...H.calcLine(l,qIntra(),o)}));
     return {lines,t:H.calcDoc(lines,qIntra(),"QTN",o),o};
   };
-  const drawTot=()=>{const r=calc();$("#qfTot").innerHTML=r.t?qTotalsHtml(r.t,r.o):`<span class="muted small">Add products to see the total.</span>`};
-  const drawLines=()=>{
-    $("#qfLines").innerHTML=qForm.lines.length?qForm.lines.map((l,i)=>`<div class="card" style="padding:10px 12px;margin-bottom:6px">
-      <div class="row" style="align-items:flex-start;gap:8px"><div class="grow"><b style="font-size:14px">${esc(l.desc)}</b><div class="small muted"><span class="mono">${esc(l.mat)}</span> · MRP ${inr2(l.mrp)}${l.gstRate?` · GST ${l.gstRate}%`:""}</div></div>
+  const drawTot=()=>{const r=calc();$("#qfTot").innerHTML=r.t&&qForm.lines.length?qTotalsHtml(r.t,r.o,"Price"):`<span class="muted small">Add products to see the total.</span>`};
+  const drawLines=()=>{const ls=qPriced();
+    $("#qfLines").innerHTML=ls.length?ls.map((l,i)=>`<div class="card" style="padding:10px 12px;margin-bottom:6px">
+      <div class="row" style="align-items:flex-start;gap:8px"><div class="grow"><b style="font-size:14px">${esc(l.desc)}</b><div class="small muted"><span class="mono">${esc(l.mat)}</span> · rate ${l.base?inr2(l.base):`<span style="color:var(--red)">not available</span>`} → <b style="color:var(--navy)">price ${inr2(l.rate)}</b>${l.gstRate?` · GST ${l.gstRate}%`:""}</div></div>
       <button type="button" class="btn sm" data-qx="${i}" title="Remove">✕</button></div>
       <div class="row" style="gap:8px;margin-top:6px"><span class="small muted">Qty</span>
       <button type="button" class="btn sm" data-qm="${i}">−</button><input type="tel" inputmode="numeric" data-qq="${i}" value="${esc(l.qty)}" style="max-width:64px;text-align:center"><button type="button" class="btn sm" data-qp="${i}">+</button>
-      <span class="grow"></span><b>${inr2(r2q(l.qty*l.mrp))}</b></div></div>`).join(""):`<div class="small muted">No products yet — search above to add.</div>`;
+      <span class="grow"></span><b>${inr2(r2q(l.qty*l.rate))}</b></div></div>`).join(""):`<div class="small muted">No products yet — search above to add.</div>`;
     document.querySelectorAll("[data-qx]").forEach(b=>b.onclick=()=>{qForm.lines.splice(+b.dataset.qx,1);drawLines()});
     document.querySelectorAll("[data-qm]").forEach(b=>b.onclick=()=>{const l=qForm.lines[+b.dataset.qm];l.qty=Math.max(1,(+l.qty||1)-1);drawLines()});
     document.querySelectorAll("[data-qp]").forEach(b=>b.onclick=()=>{const l=qForm.lines[+b.dataset.qp];l.qty=(+l.qty||0)+1;drawLines()});
@@ -2461,20 +2470,23 @@ async function openQuoteForm(q,docId){
     const words=s.split(/\s+/);
     const hits=catalog.filter(p=>{const t=(p.desc+" "+p.mat+" "+(p.div||"")).toLowerCase();return words.every(w=>t.includes(w))}).slice(0,40);
     res.hidden=false;
-    res.innerHTML=hits.length?hits.map((p,i)=>`<div class="qhit" data-qh="${esc(p.mat)}"><b>${esc(p.desc)}</b><div class="small muted"><span class="mono">${esc(p.mat)}</span>${p.div?" · "+esc(p.div):""} · <b style="color:var(--navy)">MRP ${inr2(p.mrp)}</b></div></div>`).join(""):`<div class="small muted" style="padding:10px">No product matches “${esc(s)}”.</div>`;
+    res.innerHTML=hits.length?hits.map((p,i)=>`<div class="qhit" data-qh="${esc(p.mat)}"><b>${esc(p.desc)}</b><div class="small muted"><span class="mono">${esc(p.mat)}</span>${p.div?" · "+esc(p.div):""} · ${gBase(p)?`<b style="color:var(--navy)">Rate ${inr2(gBase(p))}</b>`:`<span style="color:var(--red)">no rate in inventory</span>`}</div></div>`).join(""):`<div class="small muted" style="padding:10px">No product matches “${esc(s)}”.</div>`;
     res.querySelectorAll("[data-qh]").forEach(x=>x.onclick=()=>{
       const p=catalog.find(z=>z.mat===x.dataset.qh); if(!p)return;
+      if(!gBase(p)){toast("This product has no Rate in the inventory");return}
       const ex=qForm.lines.find(l=>l.mat===p.mat); if(ex)ex.qty=(+ex.qty||0)+1;
-      else qForm.lines.push({mat:p.mat,pid:p.mat,desc:p.desc,hsn:p.hsn||"",uom:p.uom||"",qty:1,mrp:+p.mrp||0,rate:+p.mrp||0,discPct:0,gstRate:+p.gst||0,remarks:""});
+      else qForm.lines.push({mat:p.mat,pid:p.mat,desc:p.desc,hsn:p.hsn||"",uom:p.uom||"",qty:1,discPct:0,gstRate:+p.gst||0,remarks:""});
       pick.value="";res.hidden=true;drawLines();toast("Added: "+p.desc.slice(0,40));
     });
   };
   pick.oninput=drawRes; pick.onfocus=drawRes;
-  ["qfHo","qfHp","qfSo","qfSp","qfGstOn","qfGst"].forEach(id=>{const x=$("#"+id);x.oninput=x.onchange=()=>{if(id==="qfHp"&&x.value)$("#qfHo").checked=true;if(id==="qfSp"&&x.value)$("#qfSo").checked=true;drawTot()}});
+  ["qfHo","qfHp","qfSo","qfSp","qfGstOn","qfGst","qfPct","qfPctOn"].forEach(id=>{const x=$("#"+id);x.oninput=x.onchange=()=>{if(id==="qfHp"&&x.value)$("#qfHo").checked=true;if(id==="qfSp"&&x.value)$("#qfSo").checked=true;if(id==="qfPct")$("#qfPctOn").checked=!!x.value.trim();(id==="qfPct"||id==="qfPctOn")?drawLines():drawTot()}});
   drawLines();
   $("#qfSave").onclick=()=>saveQuote(false);
   $("#qfGo").onclick=()=>saveQuote(true);
 }
+function qPct(){return $("#qfPctOn")&&$("#qfPctOn").checked?(+($("#qfPct").value||"").replace(/[^\d.]/g,"")||0):0}
+function qPriced(){const pct=qPct();return qForm.lines.map(l=>{const base=gBase(l)||+l.base||0,price=r2q(base*(1+pct/100));return {...l,base,mrp:price,rate:price,discPct:0}})}
 function qOpts(){
   const ho=$("#qfHo").checked, so=$("#qfSo").checked;
   const o={hospOn:ho,hospPct:ho?(+$("#qfHp").value.replace(/[^\d.]/g,"")||0):"",surgOn:so,surgPct:so?(+$("#qfSp").value.replace(/[^\d.]/g,"")||0):""};
@@ -2489,6 +2501,7 @@ async function saveQuote(withPdf){
   const name=$("#qfName").value.trim(); if(!name)return err.textContent="Enter the hospital / clinic name.";
   if(!F.lines.length)return err.textContent="Add at least one product.";
   if(F.lines.some(l=>!(+l.qty>0)))return err.textContent="Every product needs a quantity of at least 1.";
+  const priced=qPriced(); if(priced.some(l=>!(l.base>0)))return err.textContent="One product has no Rate in the inventory. Remove it.";
   const o=qOpts();
   if(o.hospOn&&!(o.hospPct>0))return err.textContent="Hospital discount is ticked: enter the %, or untick it.";
   if(o.surgOn&&!(o.surgPct>0))return err.textContent="Surgeon discount is ticked: enter the %, or untick it.";
@@ -2498,13 +2511,13 @@ async function saveQuote(withPdf){
   if(gst&&!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gst))return err.textContent="The GSTIN doesn't look right (15 characters, e.g. 33AAICD8859P1ZS). Fix it or leave it blank.";
   const date=$("#qfDate").value||today(), valid=$("#qfValid").value||addDays(date,qCfg().validDays);
   if(valid<date)return err.textContent="'Valid until' is before the quotation date.";
-  const intra=qIntra(), lines=F.lines.map(l=>({...l,qty:+l.qty,...H.calcLine({...l,qty:+l.qty},intra,o)})), totals=H.calcDoc(lines,intra,"QTN",o);
+  const intra=qIntra(), lines=priced.map(l=>({...l,qty:+l.qty,...H.calcLine({...l,qty:+l.qty},intra,o)})), totals=H.calcDoc(lines,intra,"QTN",o);
   const sc=gst?gst.slice(0,2):"33";
   const cust={name,address:$("#qfAddr").value.trim(),gstin:gst,stateCode:sc,stateName:H.STATES[sc]||"",dl:"",phone:$("#qfPh").value.trim()};
   const E=F.e.id, fy=H.fyOf(date);
   const base={type:"QTN",exec:E,execName:F.e.name||"",doctorId:F.d.id,doctor:F.d.doctor||"",hospital:F.d.hospital||"",area:F.d.area||"",date,validUntil:valid,
     yourRef:$("#qfRef").value.trim(),preparedBy:`${F.e.name||""} (${E})`,customer:cust,intra,extra:F.d.doctor?[{label:"Kind Attn.",value:F.d.doctor}]:[],
-    notes:$("#qfNotes").value.trim(),lines,totals,opts:o,discEff:de,company:qCompany(),updatedAt:Date.now()};
+    notes:$("#qfNotes").value.trim(),lines,totals,opts:o,discEff:de,priceLabel:"Price",basis:"rate",markup:qPct(),company:qCompany(),updatedAt:Date.now()};
   const b1=$("#qfGo"),b2=$("#qfSave"); b1.disabled=b2.disabled=true; (withPdf?b1:b2).textContent="Saving…";
   try{
     let rec;
@@ -2549,7 +2562,7 @@ function exportQuotes(){
   if(!window.XLSX)return toast("Excel library didn't load");
   const rows=[];
   for(const q of list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)))for(const l of (q.lines||[]))rows.push({"Quotation no.":q.no,"Date":q.date,"Valid until":q.validUntil,"Status":Q_STATUS[q.status]||q.status,
-    "Executive":q.execName,"Executive ID":q.exec,"Doctor":q.doctor,"Hospital":q.customer?.name||q.hospital,"Product code":l.mat,"Product":l.desc,"Qty":l.qty,"MRP (₹)":l.mrp,
+    "Executive":q.execName,"Executive ID":q.exec,"Doctor":q.doctor,"Hospital":q.customer?.name||q.hospital,"Product code":l.mat,"Product":l.desc,"Qty":l.qty,"Rate (₹)":l.base||"","Markup %":q.markup||"","Price (₹)":l.mrp,
     "Hospital disc %":q.opts?.hospOn?q.opts.hospPct:"","Surgeon disc %":q.opts?.surgOn?q.opts.surgPct:"","Line total incl. GST (₹)":l.total,"Quotation grand total (₹)":q.totals?.grand});
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.json_to_sheet(rows);
   ws["!cols"]=Object.keys(rows[0]).map(k=>({wch:Math.max(10,Math.min(42,k.length+4))}));
@@ -2570,7 +2583,7 @@ function bindDoctorQuotes(d){
 function quoteSetupHtml(){
   const c=qCfg();
   return `<div class="card" style="margin-bottom:16px"><b>Quotations</b>
-    <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list (MRP only — purchase rates are never shared). ${catalog&&!catalog.length?`<span style="color:var(--red)">${catNote()}</span>`:catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
+    <p class="small muted" style="margin:6px 0 10px">Executives build quotations from the inventory's product list: price = Rate + their %, then hospital / surgeon discount and GST. ${catalog&&!catalog.length?`<span style="color:var(--red)">${catNote()}</span>`:catalog?`<b>${catalog.length}</b> products available${catAt?`, updated ${esc(new Date(catAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}))}`:""}.`:"Loading product list…"}</p>
     <div class="row"><label class="small">Quotation valid for (days) <input type="tel" inputmode="numeric" id="qcDays" value="${esc(c.validDays)}" style="max-width:80px"></label>
     <button class="btn sm pri" id="qcSave">Save</button></div></div>`;
 }
@@ -2589,15 +2602,13 @@ function bindQuoteSetup(){
    ========================================================= */
 let rateMap=null, rateErr="", gquotes=[], gLoaded=false, gSubStarted=false, gForm=null;
 function startGenSubs(){
-  if(gSubStarted||!db||!uid||!canAdmin)return; gSubStarted=true;
+  if(gSubStarted||!db||!uid||!loggedIn())return; gSubStarted=true;
   const rer=()=>{if(view==="gquotes"&&!gForm)render()};
-  db.doc("rates/products").onSnapshot(s=>{const d=s.exists?s.data():null;rateErr=d?"":"missing";rateMap={};((d&&d.list)||[]).forEach(r=>rateMap[r.mat]=r);rer()},
-    e=>{rateErr=/invalid_argument|permission/i.test((e&&(e.code||e.message))||"")?"denied":"error";rateMap={};rer()});
   db.collection("gquotes").onSnapshot(s=>{gquotes=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));gLoaded=true;rer()},()=>{gLoaded=true;rer()});
 }
 function gNote(){
-  if(rateErr==="denied")return `Can't read purchase rates: update the <b>Firestore rules</b> (paste the new firestore.rules → Publish).`;
-  if(rateErr==="missing")return `No purchase rates yet. Open <a href="inventory/" target="_blank" style="color:var(--accent);font-weight:700">the inventory</a> → Sell Order → Field quotations → <b>Send product list now</b>.`;
+  if(rateErr==="denied")return canAdmin?`Can't read purchase rates: update the <b>Firestore rules</b> (paste the new firestore.rules → Publish).`:"Can't read product rates. Ask the admin to update the Firestore rules.";
+  if(rateErr==="missing")return !canAdmin?"Product rates aren't available yet. Ask the admin to send them from the inventory.":`No purchase rates yet. Open <a href="inventory/" target="_blank" style="color:var(--accent);font-weight:700">the inventory</a> → Sell Order → Field quotations → <b>Send product list now</b>.`;
   if(rateErr)return "Couldn't load purchase rates. Check the internet and reload.";
   return "";
 }
@@ -2613,17 +2624,17 @@ function vGQuotes(){
     <div class="stat"><b>${inr(sum(open))}</b><span>Open · ${open.length}</span></div>
     <div class="stat"><b>${inr(sum(acc))}</b><span>Accepted · ${acc.length}</span></div>
     <div class="stat"><b>${rateMap?Object.keys(rateMap).length:"…"}</b><span>Products with rates</span></div></div>
-  <h2>General quotations <span class="chip" style="vertical-align:middle">Admin only</span></h2>
-  <p class="small muted" style="margin:-4px 0 12px">For any customer. Price = inventory Rate + your % (optional). The PDF shows only the final price.</p>`;
-  const n=gNote(); if(n)h+=`<div class="notice">${n}</div>`;
+  <h2>General quotations <span class="chip" style="vertical-align:middle">${canAdmin?"Executives can view + change discount":"From the office"}</span></h2>
+  <p class="small muted" style="margin:-4px 0 12px">${canAdmin?"For any customer. Price = inventory Rate + your % (optional). The PDF shows only the final price. Executives see these quotations and can change only the hospital / surgeon discount.":"Quotations made by the office. Open one to download or share the PDF. You can change only the hospital / surgeon discount."}</p>`;
+  const n=canAdmin?gNote():""; if(n)h+=`<div class="notice">${n}</div>`;
   h+=`<div class="row" style="margin-bottom:10px"><input type="search" id="gQ" placeholder="Search number, customer, product…" style="flex:1;min-width:180px" value="${esc(filt.gQ||"")}">
-    <button class="btn sm" id="gXls">⬇ Excel</button>${canWrite&&db?`<button class="btn pri" id="gNew">+ New quotation</button>`:""}</div>
+    ${canAdmin?`<button class="btn sm" id="gXls">⬇ Excel</button>${canWrite&&db?`<button class="btn pri" id="gNew">+ New quotation</button>`:""}`:""}</div>
   <div class="seg" style="margin-bottom:14px">${[["all","All",gquotes.length],...Object.keys(Q_STATUS).map(k=>[k,Q_STATUS[k],gquotes.filter(q=>q.status===k).length])].map(([k,l,c])=>`<button type="button" data-gst="${k}" class="${st===k?"on":""}">${l} <span style="opacity:.7">(${c})</span></button>`).join("")}</div>`;
   if(!gLoaded)return h+`<div class="grid"><div class="skel"></div><div class="skel"></div></div>`;
-  if(!shown.length)return h+`<div class="empty">No general quotations yet.<br><br>Tap <b>+ New quotation</b>.</div>`;
+  if(!shown.length)return h+`<div class="empty">No general quotations yet.${canAdmin?"<br><br>Tap <b>+ New quotation</b>.":""}</div>`;
   return h+`<div class="grid">`+shown.map(q=>`<div class="card doc" data-gid="${esc(q.id)}">
     <div class="row" style="align-items:flex-start"><div class="grow"><div class="t">${esc(q.customer?.name||"")}</div><div class="h">${esc((q.customer?.address||"").split("\n")[0])}</div></div>
-    <div style="text-align:right"><b style="font-size:17px;color:var(--navy)">${inr(q.totals?.grand)}</b><div class="small muted">${(q.lines||[]).length} product${(q.lines||[]).length===1?"":"s"}${+q.markup?` · +${esc(q.markup)}%`:""}</div></div></div>
+    <div style="text-align:right"><b style="font-size:17px;color:var(--navy)">${inr(q.totals?.grand)}</b><div class="small muted">${(q.lines||[]).length} product${(q.lines||[]).length===1?"":"s"}${canAdmin&&+q.markup?` · +${esc(q.markup)}%`:""}</div></div></div>
     <div class="m">${qChip(q.status)}<span class="mono">${esc(q.no)}</span><span>${esc(fmtDs(q.date))}</span></div></div>`).join("")+`</div>`;
 }
 function bindGQuotes(){
@@ -2637,29 +2648,71 @@ function openGQuote(id){
   const q=gquotes.find(x=>x.id===id); if(!q)return;
   $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">${esc(q.no)}</div><div class="small" style="color:#b9cbdd">${esc(q.customer?.name||"")}</div></div><button class="x" id="gvX">×</button></div>
   <div class="sheet-b">
-    <div class="auto"><div>Date<b>${esc(fmtD(q.date))}</b></div><div>Valid until<b>${esc(fmtD(q.validUntil))}</b></div><div>Status<b>${qChip(q.status)}</b></div><div>Pricing<b>Rate${+q.markup?` + ${esc(q.markup)}%`:""}</b></div></div>
+    <div class="auto"><div>Date<b>${esc(fmtD(q.date))}</b></div><div>Valid until<b>${esc(fmtD(q.validUntil))}</b></div><div>Status<b>${qChip(q.status)}</b></div>${canAdmin?`<div>Pricing<b>Rate${+q.markup?` + ${esc(q.markup)}%`:""}</b></div>`:`<div>Made by<b>Office</b></div>`}</div>
     <span class="lbl">Products (${(q.lines||[]).length})</span>
     <div class="card" style="padding:4px 12px;margin-bottom:12px">${(q.lines||[]).map((l,i)=>`<div style="padding:9px 0;${i?"border-top:1px solid var(--line)":""}">
       <b style="font-size:14px">${esc(l.desc)}</b>
-      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × ${inr2(l.rate)} <span title="Your rate – not printed">(rate ${inr2(l.base)})</span></span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
+      <div class="row small" style="margin-top:3px"><span class="muted grow"><span class="mono">${esc(l.mat||"")}</span> · ${esc(l.qty)} × ${inr2(l.rate)}${canAdmin?` <span title="Your rate – not printed">(rate ${inr2(l.base)})</span>`:""}</span><b>${inr2(l.total)}</b></div></div>`).join("")}</div>
     <div class="qtot">${qTotalsHtml(q.totals||{},q.opts||{},"Price")}</div>
     ${q.notes?`<p class="small"><b>Note:</b> ${esc(q.notes)}</p>`:""}
+    ${q.discountBy?`<p class="small muted">Discount last changed by <b>${esc(q.discountBy)}</b>${q.discountAt?" on "+esc(new Date(q.discountAt).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})):""}.</p>`:""}
     <div class="row" style="margin-top:14px;gap:8px">
       <button class="btn pri" id="gvPdf">⬇ Download PDF</button>${navigator.canShare?`<button class="btn" id="gvShare">📤 Share PDF</button>`:""}
-      <button class="btn" id="gvEdit">✏️ Edit</button><button class="btn" id="gvCopy">⧉ Copy as new</button><button class="btn" id="gvDel" style="color:var(--red)">🗑 Delete</button>
+      ${canWrite&&db?`<button class="btn" id="gvDisc">％ Edit discount</button>`:""}
+      ${canAdmin?`<button class="btn" id="gvEdit">✏️ Edit</button><button class="btn" id="gvCopy">⧉ Copy as new</button><button class="btn" id="gvDel" style="color:var(--red)">🗑 Delete</button>`:""}
     </div>
-    <span class="lbl">Update status</span><div class="seg" id="gvSt">${Object.keys(Q_STATUS).map(k=>`<button type="button" data-s="${k}" class="${q.status===k?"on":""}">${Q_STATUS[k]}</button>`).join("")}</div>
+    ${canAdmin?`<span class="lbl">Update status</span><div class="seg" id="gvSt">${Object.keys(Q_STATUS).map(k=>`<button type="button" data-s="${k}" class="${q.status===k?"on":""}">${Q_STATUS[k]}</button>`).join("")}</div>`:""}
   </div>`;
   $("#ov").classList.add("on"); docOpen=true;
   $("#gvX").onclick=()=>{$("#ov").classList.remove("on");docOpen=false};
   $("#gvPdf").onclick=()=>quotePdf(q,false);
   const sh=$("#gvShare"); if(sh)sh.onclick=()=>quotePdf(q,true);
+  const gd=$("#gvDisc"); if(gd)gd.onclick=()=>openGDisc(q);
+  if(!canAdmin)return;
   $("#gvEdit").onclick=()=>openGForm(q);
   $("#gvCopy").onclick=()=>openGForm({...q,id:null,no:null,status:"open",copy:true});
   $("#gvDel").onclick=async()=>{if(!confirm(`Delete quotation ${q.no}? This can't be undone.`))return;
     try{await db.doc("gquotes/"+q.id).delete();logAct("admin",`General quotation ${q.no} deleted`);$("#ov").classList.remove("on");docOpen=false;toast("Deleted "+q.no)}catch(x){toast("Couldn't delete ("+(x.code||x.message)+")")}};
   document.querySelectorAll("#gvSt button").forEach(b=>b.onclick=async()=>{const s=b.dataset.s;if(s===q.status)return;
     try{await db.doc("gquotes/"+q.id).set({...stripQ(q),status:s,statusAt:Date.now()});toast("Marked "+Q_STATUS[s]);if(s==="accepted")celebrate(true);openGQuote(q.id)}catch(x){toast("Couldn't update ("+(x.code||x.message)+")")}});
+}
+/* discount-only edit (executives and admin) */
+async function openGDisc(q){
+  const o0=q.opts||{}, v=x=>esc(x==null?"":x);
+  $("#sheet").innerHTML=`<div class="sheet-h"><div><div style="font-weight:700;font-size:16px">Edit discount · ${esc(q.no)}</div><div class="small" style="color:#b9cbdd">${esc(q.customer?.name||"")}</div></div><button class="x" id="gdX">×</button></div>
+  <div class="sheet-b">
+    <p class="small muted" style="margin:0 0 10px">Only the discount can be changed here. Products and prices stay as the office set them.</p>
+    <div style="display:grid;grid-template-columns:auto 90px;gap:8px 12px;align-items:center;max-width:300px">
+      <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="gdHo" ${o0.hospOn?"checked":""}> Hospital discount %</label>
+      <input type="tel" inputmode="decimal" id="gdHp" value="${v(o0.hospOn?o0.hospPct:"")}" placeholder="0">
+      <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="gdSo" ${o0.surgOn?"checked":""}> Surgeon discount %</label>
+      <input type="tel" inputmode="decimal" id="gdSp" value="${v(o0.surgOn?o0.surgPct:"")}" placeholder="0">
+    </div>
+    <div class="card qtot" id="gdTot" style="margin-top:12px"></div>
+    <div class="err" id="gdErr"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px"><button class="btn" id="gdC">Cancel</button><button class="btn" id="gdSave">Save</button><button class="btn pri" id="gdGo">Save &amp; PDF</button></div>
+  </div>`;
+  $("#ov").classList.add("on"); docOpen=true;
+  $("#gdX").onclick=$("#gdC").onclick=()=>openGQuote(q.id);
+  let H; try{H=await loadQuoteLib()}catch(x){$("#gdErr").textContent="Couldn't load the quotation module. Check your internet and try again.";return}
+  const num=id=>+($(id).value||"").replace(/[^\d.]/g,"")||0;
+  const opts=()=>{const ho=$("#gdHo").checked,so=$("#gdSo").checked;return {...o0,hospOn:ho,hospPct:ho?num("#gdHp"):"",surgOn:so,surgPct:so?num("#gdSp"):""}};
+  const calc=()=>{const o=opts(),lines=(q.lines||[]).map(l=>({...l,...H.calcLine(l,q.intra,o)}));return {o,lines,totals:H.calcDoc(lines,q.intra,"QTN",o)}};
+  const draw=()=>{const r=calc();$("#gdTot").innerHTML=qTotalsHtml(r.totals,r.o,"Price")};
+  ["gdHo","gdHp","gdSo","gdSp"].forEach(id=>{const x=$("#"+id);x.oninput=x.onchange=()=>{if(id==="gdHp")$("#gdHo").checked=!!x.value.trim();if(id==="gdSp")$("#gdSo").checked=!!x.value.trim();draw()}});
+  draw();
+  const go=async pdf=>{const err=$("#gdErr");err.textContent="";const r=calc();
+    if(r.o.hospOn&&!(r.o.hospPct>0))return err.textContent="Hospital discount is ticked: enter the %, or untick it.";
+    if(r.o.surgOn&&!(r.o.surgPct>0))return err.textContent="Surgeon discount is ticked: enter the %, or untick it.";
+    if(discEff(r.o)>=100)return err.textContent="The discount can't be 100% or more.";
+    const a=actor(), rec={...stripQ(q),opts:r.o,lines:r.lines,totals:r.totals,discEff:discEff(r.o),discountBy:a.name||a.id,discountAt:Date.now(),updatedAt:Date.now()};
+    $("#gdSave").disabled=$("#gdGo").disabled=true;
+    try{await db.doc("gquotes/"+q.id).set(rec);rec.id=q.id;
+      logAct("order",`General quotation ${q.no} – discount set to ${[r.o.hospOn?`hospital ${r.o.hospPct}%`:"",r.o.surgOn?`surgeon ${r.o.surgPct}%`:""].filter(Boolean).join(" + ")||"none"} – ${inr(r.totals.grand)}`);
+      toast("Discount saved ✓");const i=gquotes.findIndex(x=>x.id===q.id);if(i>=0)gquotes[i]=rec;
+      if(pdf)await quotePdf(rec,false);openGQuote(q.id)}
+    catch(x){$("#gdSave").disabled=$("#gdGo").disabled=false;err.textContent="Couldn't save ("+(x.code||x.message)+")"+(/invalid_argument|permission/i.test(x.code||x.message||"")?" – ask the admin to update the Firestore rules.":"")}};
+  $("#gdSave").onclick=()=>go(false); $("#gdGo").onclick=()=>go(true);
 }
 async function openGForm(q){
   const edit=q&&q.id, v=x=>esc(x==null?"":x), c=q?q.customer:{name:"",address:"",gstin:"",phone:""};
